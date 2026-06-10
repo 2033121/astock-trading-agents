@@ -11,7 +11,7 @@
 - 融资融券数据
 - 新闻资讯
 
-API 认证：环境变量 TUSHARE_TOKEN，也可复用 MCP 配置中的 token。
+API 认证：通过环境变量 TUSHARE_TOKEN 设置，可在 https://tushare.pro/register 注册获取。
 """
 
 from __future__ import annotations

@@ -20,6 +20,10 @@ env/
 *.swp
 *.swo
 
+# Environment files
+.env
+.env.*
+
 # Testing
 .pytest_cache/
 .coverage

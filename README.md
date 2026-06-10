@@ -13,6 +13,8 @@
 - **结构化输出**: Pydantic 模型保证输出格式，支持五级评级(买入/增持/持有/减持/卖出)
 - **灵活LLM**: OpenAI兼容接口，支持 DeepSeek/Qwen/GLM/Ollama 等 9 种提供商
 
+![报告预览](docs/images/demo-report-preview.png)
+
 ## 架构
 
 ```
