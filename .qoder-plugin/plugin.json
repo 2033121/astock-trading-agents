@@ -1,0 +1,15 @@
+{
+  "name": "astock-trading-agents",
+  "displayName": "A股智能决策",
+  "version": "0.1.0",
+  "description": "A-share multi-agent quantitative trading decision framework based on LangGraph debate architecture",
+  "descriptionZh": "A股多Agent量化交易决策框架 — 基于LangGraph多角色辩论式分析，集成14位AI分析师（技术/新闻/舆情/基本面）、多空辩论、风控辩论、记忆反思系统",
+  "category": "finance",
+  "tags": ["quantitative-trading", "a-shares", "multi-agent", "decision-support"],
+  "skills": [
+    "skills/智能分析",
+    "skills/分析历史",
+    "skills/决策记忆",
+    "skills/交易配置"
+  ]
+}
