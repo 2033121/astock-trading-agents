@@ -108,7 +108,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-org/astock-trading-agents.git
+git clone https://github.com/2033121/astock-trading-agents.git
 cd astock-trading-agents
 
 # 开发模式安装

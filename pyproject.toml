@@ -9,6 +9,11 @@ description = "A股多Agent量化交易决策框架 — 基于LangGraph的多角
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+
+[project.urls]
+Homepage = "https://github.com/2033121/astock-trading-agents"
+Repository = "https://github.com/2033121/astock-trading-agents"
+Issues = "https://github.com/2033121/astock-trading-agents/issues"
 dependencies = [
     "langchain-core>=0.3.0",
     "langchain-openai>=0.3.0",
