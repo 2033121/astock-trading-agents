@@ -7,7 +7,7 @@ a clean interface for the orchestrator.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from astock_trader.agents.utils.rating import parse_rating
 
@@ -24,7 +24,7 @@ class SignalProcessor:
         Currently unused; rating is extracted via regex-based parsing.
     """
 
-    def __init__(self, quick_thinking_llm: Optional[Any] = None) -> None:
+    def __init__(self, quick_thinking_llm: Any | None = None) -> None:
         self.quick_thinking_llm = quick_thinking_llm
 
     def process_signal(self, full_signal: str) -> str:

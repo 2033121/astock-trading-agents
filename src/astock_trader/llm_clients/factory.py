@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from astock_trader.llm_clients.openai_client import OpenAICompatibleClient
-
 
 # 各提供商的默认 base_url 映射
 _PROVIDER_BASE_URLS: dict[str, str] = {
@@ -26,8 +25,8 @@ _PROVIDER_BASE_URLS: dict[str, str] = {
 def create_llm_client(
     provider: str = "openai",
     model: str = "deepseek-chat",
-    base_url: Optional[str] = None,
-    api_key: Optional[str] = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
     temperature: float = 0.7,
     **kwargs: Any,
 ) -> OpenAICompatibleClient:

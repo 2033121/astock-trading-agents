@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, List, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def bind_structured(llm: Any, schema: type, agent_name: str) -> Optional[Any]:
+def bind_structured(llm: Any, schema: type, agent_name: str) -> Any | None:
     """尝试为 LLM 绑定结构化输出 schema。
 
     Parameters
@@ -39,9 +40,9 @@ def bind_structured(llm: Any, schema: type, agent_name: str) -> Optional[Any]:
 
 
 def invoke_structured_or_freetext(
-    structured_llm: Optional[Any],
+    structured_llm: Any | None,
     plain_llm: Any,
-    prompt: Union[str, List[Tuple[str, str]]],
+    prompt: str | list[tuple[str, str]],
     render: Callable[[Any], str],
     agent_name: str,
 ) -> str:

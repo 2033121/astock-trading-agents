@@ -14,10 +14,10 @@ from astock_trader.agents.schemas import (
     render_trader_proposal,
 )
 
-
 # ────────────────────────────────────────────────────────────────
 #  PortfolioRating enum
 # ────────────────────────────────────────────────────────────────
+
 
 class TestPortfolioRating:
     """Tests for the PortfolioRating enum."""
@@ -49,6 +49,7 @@ class TestPortfolioRating:
 #  TraderAction enum
 # ────────────────────────────────────────────────────────────────
 
+
 class TestTraderAction:
     """Tests for the TraderAction enum."""
 
@@ -61,6 +62,7 @@ class TestTraderAction:
 # ────────────────────────────────────────────────────────────────
 #  ResearchPlan
 # ────────────────────────────────────────────────────────────────
+
 
 class TestResearchPlan:
     """Tests for the ResearchPlan model."""
@@ -104,6 +106,7 @@ class TestResearchPlan:
 #  TraderProposal
 # ────────────────────────────────────────────────────────────────
 
+
 class TestTraderProposal:
     """Tests for the TraderProposal model."""
 
@@ -144,6 +147,7 @@ class TestTraderProposal:
 #  PortfolioDecision
 # ────────────────────────────────────────────────────────────────
 
+
 class TestPortfolioDecision:
     """Tests for the PortfolioDecision model."""
 
@@ -176,6 +180,7 @@ class TestPortfolioDecision:
 # ────────────────────────────────────────────────────────────────
 #  render_research_plan
 # ────────────────────────────────────────────────────────────────
+
 
 class TestRenderResearchPlan:
     """Tests for render_research_plan()."""
@@ -225,6 +230,7 @@ class TestRenderResearchPlan:
 # ────────────────────────────────────────────────────────────────
 #  render_trader_proposal
 # ────────────────────────────────────────────────────────────────
+
 
 class TestRenderTraderProposal:
     """Tests for render_trader_proposal()."""
@@ -279,6 +285,7 @@ class TestRenderTraderProposal:
 # ────────────────────────────────────────────────────────────────
 #  render_pm_decision
 # ────────────────────────────────────────────────────────────────
+
 
 class TestRenderPmDecision:
     """Tests for render_pm_decision()."""

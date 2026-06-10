@@ -8,7 +8,7 @@ is stored in the memory log for future context.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class Reflector:
         If ``None``, reflection is skipped and a placeholder is returned.
     """
 
-    def __init__(self, quick_thinking_llm: Optional[Any] = None) -> None:
+    def __init__(self, quick_thinking_llm: Any | None = None) -> None:
         self.quick_thinking_llm = quick_thinking_llm
 
     def reflect_on_final_decision(
@@ -61,11 +61,7 @@ class Reflector:
             logger.debug("No quick-thinking LLM configured; skipping reflection.")
             return "[未配置 LLM，跳过反思]"
 
-        human_msg = (
-            f"收益率: {raw_return:+.1%}\n"
-            f"超额收益: {alpha_return:+.1%}\n\n"
-            f"决策:\n{final_decision}"
-        )
+        human_msg = f"收益率: {raw_return:+.1%}\n超额收益: {alpha_return:+.1%}\n\n决策:\n{final_decision}"
         messages = [
             ("system", _SYSTEM_PROMPT),
             ("human", human_msg),

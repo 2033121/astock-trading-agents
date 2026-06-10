@@ -1,14 +1,13 @@
 """Tests for astock_trader.agents.utils.memory — trading memory log system."""
 
-import json
 import pytest
 
 from astock_trader.agents.utils.memory import TradingMemoryLog
 
-
 # ────────────────────────────────────────────────────────────────
 #  Fixtures
 # ────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def memory(tmp_path):
@@ -27,21 +26,33 @@ def memory_with_entries(tmp_path):
         memory_file="test_memory.log",
     )
     # Store a few decisions
-    mem.store_decision("000001", "2025-06-01", {
-        "rating": "买入",
-        "action": "买入",
-        "reasoning": "技术面突破",
-    })
-    mem.store_decision("600519", "2025-06-02", {
-        "rating": "增持",
-        "action": "增持",
-        "reasoning": "基本面改善",
-    })
-    mem.store_decision("000001", "2025-06-03", {
-        "rating": "持有",
-        "action": "持有",
-        "reasoning": "等待确认",
-    })
+    mem.store_decision(
+        "000001",
+        "2025-06-01",
+        {
+            "rating": "买入",
+            "action": "买入",
+            "reasoning": "技术面突破",
+        },
+    )
+    mem.store_decision(
+        "600519",
+        "2025-06-02",
+        {
+            "rating": "增持",
+            "action": "增持",
+            "reasoning": "基本面改善",
+        },
+    )
+    mem.store_decision(
+        "000001",
+        "2025-06-03",
+        {
+            "rating": "持有",
+            "action": "持有",
+            "reasoning": "等待确认",
+        },
+    )
     return mem
 
 
@@ -49,15 +60,20 @@ def memory_with_entries(tmp_path):
 #  store_decision
 # ────────────────────────────────────────────────────────────────
 
+
 class TestStoreDecision:
     """Tests for store_decision()."""
 
     def test_creates_pending_entry(self, memory):
         """store_decision 创建 pending 状态的条目。"""
-        memory.store_decision("000001", "2025-06-01", {
-            "rating": "买入",
-            "action": "买入",
-        })
+        memory.store_decision(
+            "000001",
+            "2025-06-01",
+            {
+                "rating": "买入",
+                "action": "买入",
+            },
+        )
         entries = memory._load_all_entries()
         assert len(entries) == 1
         assert entries[0]["ticker"] == "000001"
@@ -102,6 +118,7 @@ class TestStoreDecision:
 #  get_pending_entries
 # ────────────────────────────────────────────────────────────────
 
+
 class TestGetPendingEntries:
     """Tests for get_pending_entries()."""
 
@@ -128,19 +145,22 @@ class TestGetPendingEntries:
 #  get_past_context
 # ────────────────────────────────────────────────────────────────
 
+
 class TestGetPastContext:
     """Tests for get_past_context()."""
 
     def test_returns_formatted_history_for_same_ticker(self, memory_with_entries):
         """同一标的的历史上下文包含该标的的条目。"""
         # First resolve some entries manually
-        memory_with_entries.batch_update_with_outcomes([
-            {
-                "ticker": "000001",
-                "trade_date": "2025-06-01",
-                "reflection": {"outcome": "盈利", "lesson": "技术分析有效"},
-            },
-        ])
+        memory_with_entries.batch_update_with_outcomes(
+            [
+                {
+                    "ticker": "000001",
+                    "trade_date": "2025-06-01",
+                    "reflection": {"outcome": "盈利", "lesson": "技术分析有效"},
+                },
+            ]
+        )
         context = memory_with_entries.get_past_context("000001")
         assert "000001" in context
 
@@ -152,31 +172,35 @@ class TestGetPastContext:
     def test_cross_ticker_context_included(self, memory_with_entries):
         """其他标的的历史也被包含。"""
         # Resolve entries for both tickers
-        memory_with_entries.batch_update_with_outcomes([
-            {
-                "ticker": "000001",
-                "trade_date": "2025-06-01",
-                "reflection": {"outcome": "盈利"},
-            },
-            {
-                "ticker": "600519",
-                "trade_date": "2025-06-02",
-                "reflection": {"outcome": "亏损"},
-            },
-        ])
+        memory_with_entries.batch_update_with_outcomes(
+            [
+                {
+                    "ticker": "000001",
+                    "trade_date": "2025-06-01",
+                    "reflection": {"outcome": "盈利"},
+                },
+                {
+                    "ticker": "600519",
+                    "trade_date": "2025-06-02",
+                    "reflection": {"outcome": "亏损"},
+                },
+            ]
+        )
         context = memory_with_entries.get_past_context("000001")
         # Should contain both same-ticker and cross-ticker sections
         assert "000001" in context
 
     def test_context_contains_rating(self, memory_with_entries):
         """上下文中包含评级信息。"""
-        memory_with_entries.batch_update_with_outcomes([
-            {
-                "ticker": "000001",
-                "trade_date": "2025-06-01",
-                "reflection": {"outcome": "盈利"},
-            },
-        ])
+        memory_with_entries.batch_update_with_outcomes(
+            [
+                {
+                    "ticker": "000001",
+                    "trade_date": "2025-06-01",
+                    "reflection": {"outcome": "盈利"},
+                },
+            ]
+        )
         context = memory_with_entries.get_past_context("000001")
         assert "买入" in context or "评级" in context
 
@@ -185,19 +209,22 @@ class TestGetPastContext:
 #  batch_update_with_outcomes
 # ────────────────────────────────────────────────────────────────
 
+
 class TestBatchUpdateWithOutcomes:
     """Tests for batch_update_with_outcomes()."""
 
     def test_resolves_pending_entry(self, memory):
         """批量更新将 pending 标记为 resolved。"""
         memory.store_decision("000001", "2025-06-01", {"rating": "买入"})
-        updated = memory.batch_update_with_outcomes([
-            {
-                "ticker": "000001",
-                "trade_date": "2025-06-01",
-                "reflection": {"outcome": "盈利", "lesson": "顺势而为"},
-            },
-        ])
+        updated = memory.batch_update_with_outcomes(
+            [
+                {
+                    "ticker": "000001",
+                    "trade_date": "2025-06-01",
+                    "reflection": {"outcome": "盈利", "lesson": "顺势而为"},
+                },
+            ]
+        )
         assert updated == 1
         pending = memory.get_pending_entries()
         assert len(pending) == 0
@@ -205,13 +232,15 @@ class TestBatchUpdateWithOutcomes:
     def test_reflection_stored(self, memory):
         """反思内容被正确存储。"""
         memory.store_decision("000001", "2025-06-01", {"rating": "买入"})
-        memory.batch_update_with_outcomes([
-            {
-                "ticker": "000001",
-                "trade_date": "2025-06-01",
-                "reflection": {"outcome": "盈利", "lesson": "止损设置合理"},
-            },
-        ])
+        memory.batch_update_with_outcomes(
+            [
+                {
+                    "ticker": "000001",
+                    "trade_date": "2025-06-01",
+                    "reflection": {"outcome": "盈利", "lesson": "止损设置合理"},
+                },
+            ]
+        )
         entries = memory._load_all_entries()
         assert entries[0]["reflection"]["outcome"] == "盈利"
         assert entries[0]["reflection"]["lesson"] == "止损设置合理"
@@ -219,33 +248,38 @@ class TestBatchUpdateWithOutcomes:
     def test_new_rating_applied(self, memory):
         """更新时可修改评级。"""
         memory.store_decision("000001", "2025-06-01", {"rating": "买入"})
-        memory.batch_update_with_outcomes([
-            {
-                "ticker": "000001",
-                "trade_date": "2025-06-01",
-                "reflection": {"outcome": "亏损"},
-                "new_rating": "减持",
-            },
-        ])
+        memory.batch_update_with_outcomes(
+            [
+                {
+                    "ticker": "000001",
+                    "trade_date": "2025-06-01",
+                    "reflection": {"outcome": "亏损"},
+                    "new_rating": "减持",
+                },
+            ]
+        )
         entries = memory._load_all_entries()
         assert entries[0]["rating"] == "减持"
 
     def test_no_match_returns_zero(self, memory):
         """无匹配条目时返回 0。"""
         memory.store_decision("000001", "2025-06-01", {"rating": "买入"})
-        updated = memory.batch_update_with_outcomes([
-            {
-                "ticker": "999999",
-                "trade_date": "2025-06-01",
-                "reflection": {"outcome": "N/A"},
-            },
-        ])
+        updated = memory.batch_update_with_outcomes(
+            [
+                {
+                    "ticker": "999999",
+                    "trade_date": "2025-06-01",
+                    "reflection": {"outcome": "N/A"},
+                },
+            ]
+        )
         assert updated == 0
 
 
 # ────────────────────────────────────────────────────────────────
 #  _apply_rotation
 # ────────────────────────────────────────────────────────────────
+
 
 class TestApplyRotation:
     """Tests for _apply_rotation()."""
@@ -258,16 +292,18 @@ class TestApplyRotation:
         )
         # Create 15 entries for the same ticker, resolve them all
         for i in range(15):
-            date = f"2025-01-{i+1:02d}"
+            date = f"2025-01-{i + 1:02d}"
             mem.store_decision("000001", date, {"rating": "持有"})
-        mem.batch_update_with_outcomes([
-            {
-                "ticker": "000001",
-                "trade_date": f"2025-01-{i+1:02d}",
-                "reflection": {"outcome": f"day-{i}"},
-            }
-            for i in range(15)
-        ])
+        mem.batch_update_with_outcomes(
+            [
+                {
+                    "ticker": "000001",
+                    "trade_date": f"2025-01-{i + 1:02d}",
+                    "reflection": {"outcome": f"day-{i}"},
+                }
+                for i in range(15)
+            ]
+        )
 
         # Apply rotation with max_same=5
         mem._apply_rotation(max_same=5, max_cross=10)
@@ -283,7 +319,7 @@ class TestApplyRotation:
         )
         # Create some pending entries
         for i in range(5):
-            date = f"2025-01-{i+1:02d}"
+            date = f"2025-01-{i + 1:02d}"
             mem.store_decision("000001", date, {"rating": "买入"})
 
         # Apply rotation
@@ -301,17 +337,19 @@ class TestApplyRotation:
         # Create entries for multiple tickers
         for ticker in ["000001", "600519", "300750"]:
             for i in range(5):
-                date = f"2025-01-{i+1:02d}"
+                date = f"2025-01-{i + 1:02d}"
                 mem.store_decision(ticker, date, {"rating": "持有"})
             # Resolve all
-            mem.batch_update_with_outcomes([
-                {
-                    "ticker": ticker,
-                    "trade_date": f"2025-01-{i+1:02d}",
-                    "reflection": {"outcome": "ok"},
-                }
-                for i in range(5)
-            ])
+            mem.batch_update_with_outcomes(
+                [
+                    {
+                        "ticker": ticker,
+                        "trade_date": f"2025-01-{i + 1:02d}",
+                        "reflection": {"outcome": "ok"},
+                    }
+                    for i in range(5)
+                ]
+            )
 
         # Apply rotation: max_same=3, max_cross=5
         mem._apply_rotation(max_same=3, max_cross=5)
@@ -323,6 +361,7 @@ class TestApplyRotation:
 # ────────────────────────────────────────────────────────────────
 #  Edge cases
 # ────────────────────────────────────────────────────────────────
+
 
 class TestMemoryEdgeCases:
     """Tests for edge cases in TradingMemoryLog."""

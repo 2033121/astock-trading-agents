@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from astock_trader.agents.schemas import TraderProposal, render_trader_proposal
 from astock_trader.agents.utils.structured import (

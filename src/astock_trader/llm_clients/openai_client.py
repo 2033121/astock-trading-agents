@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 
@@ -33,8 +33,8 @@ class OpenAICompatibleClient(BaseLLMClient):
     def __init__(
         self,
         model: str,
-        base_url: Optional[str] = None,
-        api_key: Optional[str] = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
         temperature: float = 0.7,
         **kwargs: Any,
     ) -> None:
@@ -67,6 +67,5 @@ class OpenAICompatibleClient(BaseLLMClient):
 
     def __repr__(self) -> str:
         return (
-            f"OpenAICompatibleClient(model={self.model!r}, "
-            f"base_url={self.base_url!r}, temperature={self.temperature})"
+            f"OpenAICompatibleClient(model={self.model!r}, base_url={self.base_url!r}, temperature={self.temperature})"
         )

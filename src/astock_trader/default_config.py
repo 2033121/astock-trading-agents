@@ -23,10 +23,10 @@ DEFAULT_CONFIG = {
     # ── 数据源配置 ────────────────────────────────────────────
     # Tushare 为财务首选（结构化数据），MX 为新闻首选，akshare 提供行情
     "data_vendors": {
-        "core_stock_apis": "akshare",       # 行情数据仅 akshare 支持
-        "technical_indicators": "akshare",   # 技术指标仅 akshare 支持
-        "fundamental_data": "tushare",       # 财务数据首选 Tushare（结构化精准）
-        "news_data": "mx",                   # 新闻资讯首选妙想（东方财富权威源）
+        "core_stock_apis": "akshare",  # 行情数据仅 akshare 支持
+        "technical_indicators": "akshare",  # 技术指标仅 akshare 支持
+        "fundamental_data": "tushare",  # 财务数据首选 Tushare（结构化精准）
+        "news_data": "mx",  # 新闻资讯首选妙想（东方财富权威源）
     },
     "data_vendor": None,  # 全局首选供应商（优先级最高），None 则按各分类配置
     "tool_vendors": {},

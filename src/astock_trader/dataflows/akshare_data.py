@@ -9,7 +9,7 @@ returned instead of raising.
 from __future__ import annotations
 
 import traceback
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Annotated
 
 import pandas as pd
@@ -22,6 +22,7 @@ except ImportError:  # pragma: no cover
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _ensure_akshare() -> str | None:
     """Return an error string if akshare is not installed, else None."""
@@ -69,6 +70,7 @@ def _df_to_markdown(df: pd.DataFrame, max_rows: int = 60) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def get_stock_data(
     symbol: Annotated[str, "A-share stock symbol, e.g. '000001' or '600519'"],
@@ -443,6 +445,7 @@ def get_income_statement(
 # ---------------------------------------------------------------------------
 # Internal utilities
 # ---------------------------------------------------------------------------
+
 
 def _is_numeric(val) -> bool:
     """Check whether a value can be treated as numeric for formatting."""

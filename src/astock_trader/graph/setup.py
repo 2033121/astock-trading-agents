@@ -28,7 +28,8 @@ analysts are simply omitted from the graph.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from langchain_core.messages import AIMessage, RemoveMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -48,7 +49,7 @@ logger = logging.getLogger(__name__)
 ANALYST_ORDER = ["market", "social", "news", "fundamentals"]
 
 # Analyst display names (used as graph node labels)
-ANALYST_NAMES: Dict[str, str] = {
+ANALYST_NAMES: dict[str, str] = {
     "market": "Market Analyst",
     "social": "Social Analyst",
     "news": "News Analyst",
@@ -56,7 +57,7 @@ ANALYST_NAMES: Dict[str, str] = {
 }
 
 # Analyst tool node labels
-ANALYST_TOOL_NAMES: Dict[str, str] = {
+ANALYST_TOOL_NAMES: dict[str, str] = {
     "market": "tools_market",
     "social": "tools_social",
     "news": "tools_news",
@@ -64,7 +65,7 @@ ANALYST_TOOL_NAMES: Dict[str, str] = {
 }
 
 # Analyst message-clear node labels
-ANALYST_CLEAR_NAMES: Dict[str, str] = {
+ANALYST_CLEAR_NAMES: dict[str, str] = {
     "market": "Msg Clear Market",
     "social": "Msg Clear Social",
     "news": "Msg Clear News",
@@ -72,7 +73,7 @@ ANALYST_CLEAR_NAMES: Dict[str, str] = {
 }
 
 # Mapping analyst key -> state report field
-ANALYST_REPORT_FIELDS: Dict[str, str] = {
+ANALYST_REPORT_FIELDS: dict[str, str] = {
     "market": "market_report",
     "social": "sentiment_report",
     "news": "news_report",
@@ -124,7 +125,8 @@ def _get_analyst_system(key: str, language: str = "Chinese") -> str:
 #  Default tool sets per analyst
 # ────────────────────────────────────────────────────────────────
 
-def _get_default_tools(analyst_key: str) -> List[Any]:
+
+def _get_default_tools(analyst_key: str) -> list[Any]:
     """Return the default LangChain tool list for an analyst type."""
     if analyst_key == "market":
         from astock_trader.agents.utils.core_stock_tools import (
@@ -138,8 +140,8 @@ def _get_default_tools(analyst_key: str) -> List[Any]:
             get_daily_basic,
             get_moneyflow,
         )
-        return [get_stock_data, get_indicators, get_technical_indicators,
-                get_daily_basic, get_moneyflow]
+
+        return [get_stock_data, get_indicators, get_technical_indicators, get_daily_basic, get_moneyflow]
 
     if analyst_key == "social":
         from astock_trader.agents.utils.news_data_tools import (
@@ -151,14 +153,15 @@ def _get_default_tools(analyst_key: str) -> List[Any]:
             get_holdertrade,
             get_margin_detail,
         )
-        return [get_insider_transactions, get_news, get_global_news,
-                get_holdertrade, get_margin_detail]
+
+        return [get_insider_transactions, get_news, get_global_news, get_holdertrade, get_margin_detail]
 
     if analyst_key == "news":
         from astock_trader.agents.utils.news_data_tools import (
             get_global_news,
             get_news,
         )
+
         return [get_news, get_global_news]
 
     if analyst_key == "fundamentals":
@@ -178,6 +181,7 @@ def _get_default_tools(analyst_key: str) -> List[Any]:
             get_fina_indicator,
             get_forecast,
         )
+
         return [
             get_fundamentals,
             get_balance_sheet,
@@ -199,9 +203,10 @@ def _get_default_tools(analyst_key: str) -> List[Any]:
 #  Node factory helpers
 # ────────────────────────────────────────────────────────────────
 
+
 def _create_llm_agent(
     llm: Any,
-    tools: List[Any],
+    tools: list[Any],
     analyst_key: str = "",
     language: str = "Chinese",
 ) -> Callable:
@@ -217,7 +222,7 @@ def _create_llm_agent(
     """
     llm_with_tools = llm.bind_tools(tools) if tools else llm
 
-    def _node(state: AgentState) -> Dict[str, Any]:
+    def _node(state: AgentState) -> dict[str, Any]:
         messages = list(state.get("messages", []))
 
         # Seed initial messages for the first analyst invocation
@@ -227,9 +232,7 @@ def _create_llm_agent(
             past_context = state.get("past_context", "")
 
             system_text = _get_analyst_system(analyst_key, language)
-            human_text = (
-                f"请分析股票 {company}，日期 {trade_date}。\n\n"
-            )
+            human_text = f"请分析股票 {company}，日期 {trade_date}。\n\n"
             if past_context:
                 human_text += f"## 历史决策参考\n{past_context}\n\n"
             human_text += "请使用工具获取数据，然后撰写详细的分析报告。"
@@ -256,7 +259,8 @@ def _create_msg_clear_node(
     2. Removes all accumulated messages via ``RemoveMessage``.
     3. Stores the report in the appropriate state field.
     """
-    def _clear(state: AgentState) -> Dict[str, Any]:
+
+    def _clear(state: AgentState) -> dict[str, Any]:
         messages = state.get("messages", [])
         report = ""
 
@@ -281,7 +285,9 @@ def _create_msg_clear_node(
 
         logger.debug(
             "Msg Clear [%s]: extracted %d chars, removing %d messages",
-            analyst_key, len(report), len(removals),
+            analyst_key,
+            len(report),
+            len(removals),
         )
 
         return {
@@ -295,6 +301,7 @@ def _create_msg_clear_node(
 # ════════════════════════════════════════════════════════════════
 #  GraphSetup
 # ════════════════════════════════════════════════════════════════
+
 
 class GraphSetup:
     """Build and compile the LangGraph trading-decision pipeline.
@@ -318,8 +325,8 @@ class GraphSetup:
         self,
         deep_thinking_llm: Any,
         quick_thinking_llm: Any,
-        tool_nodes: Optional[Dict[str, List[Any]]] = None,
-        conditional_logic: Optional[ConditionalLogic] = None,
+        tool_nodes: dict[str, list[Any]] | None = None,
+        conditional_logic: ConditionalLogic | None = None,
         language: str = "Chinese",
         report_output_dir: str = "",
     ) -> None:
@@ -336,7 +343,7 @@ class GraphSetup:
 
     def setup_graph(
         self,
-        selected_analysts: Optional[List[str]] = None,
+        selected_analysts: list[str] | None = None,
     ) -> Any:
         """Build the full ``StateGraph`` and return the compiled workflow.
 
@@ -356,30 +363,28 @@ class GraphSetup:
         # Filter to valid keys while preserving canonical order
         active = [k for k in ANALYST_ORDER if k in selected_analysts]
         if not active:
-            raise ValueError(
-                f"No valid analysts selected. Choose from: {ANALYST_ORDER}"
-            )
+            raise ValueError(f"No valid analysts selected. Choose from: {ANALYST_ORDER}")
 
         # ── Resolve tools ──────────────────────────────────────
-        tools: Dict[str, List[Any]] = {}
+        tools: dict[str, list[Any]] = {}
         for key in active:
             tools[key] = self.tool_overrides.get(key) or _get_default_tools(key)
 
         # ── Create node functions ──────────────────────────────
-        analyst_nodes: Dict[str, Callable] = {}
+        analyst_nodes: dict[str, Callable] = {}
         for key in active:
             analyst_nodes[key] = _create_llm_agent(
-                self.quick_llm, tools[key],
-                analyst_key=key, language=self.language,
+                self.quick_llm,
+                tools[key],
+                analyst_key=key,
+                language=self.language,
             )
 
-        clear_nodes: Dict[str, Callable] = {}
+        clear_nodes: dict[str, Callable] = {}
         for key in active:
-            clear_nodes[key] = _create_msg_clear_node(
-                key, ANALYST_REPORT_FIELDS[key]
-            )
+            clear_nodes[key] = _create_msg_clear_node(key, ANALYST_REPORT_FIELDS[key])
 
-        tool_nodes: Dict[str, ToolNode] = {}
+        tool_nodes: dict[str, ToolNode] = {}
         for key in active:
             tool_nodes[key] = ToolNode(tools[key])
 
@@ -480,9 +485,7 @@ class GraphSetup:
 
         # ── Compile ───────────────────────────────────────────
         compiled = builder.compile()
-        logger.info(
-            "Graph compiled with analysts: %s", ", ".join(active)
-        )
+        logger.info("Graph compiled with analysts: %s", ", ".join(active))
         return compiled
 
     # ────────────────────────────────────────────────────────────
@@ -501,23 +504,21 @@ class GraphSetup:
 
     # ── Debate nodes ──────────────────────────────────────────
 
-    def _create_debate_nodes(self) -> Dict[str, Callable]:
+    def _create_debate_nodes(self) -> dict[str, Callable]:
         """Create Bull Researcher, Bear Researcher, and Research Manager nodes."""
         deep_llm = self.deep_llm
         lang = self.language
 
         # ── Bull Researcher ───────────────────────────────────
 
-        def bull_researcher(state: AgentState) -> Dict[str, Any]:
+        def bull_researcher(state: AgentState) -> dict[str, Any]:
             debate_state = state.get("investment_debate_state") or {}
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
             past_context = state.get("past_context", "")
 
             bear_history = debate_state.get("bear_history", [])
-            bear_last = (
-                "\n\n".join(bear_history[-3:]) if bear_history else "（首轮发言，等待空头回应）"
-            )
+            bear_last = "\n\n".join(bear_history[-3:]) if bear_history else "（首轮发言，等待空头回应）"
 
             reports = self._gather_reports(state)
 
@@ -528,8 +529,7 @@ class GraphSetup:
                 "1. 以「看多」开头你的回复\n"
                 "2. 用数据和逻辑论证，不要空泛\n"
                 "3. 如果空头已提出反驳，你必须正面回应\n"
-                "4. 突出被低估的利好因素\n\n"
-                + get_language_instruction(lang)
+                "4. 突出被低估的利好因素\n\n" + get_language_instruction(lang)
             )
 
             human_msg = (
@@ -540,10 +540,12 @@ class GraphSetup:
                 "请给出你的看多论据:"
             )
 
-            response = deep_llm.invoke([
-                SystemMessage(content=system_msg),
-                ("human", human_msg),
-            ])
+            response = deep_llm.invoke(
+                [
+                    SystemMessage(content=system_msg),
+                    ("human", human_msg),
+                ]
+            )
             content = response.content
 
             return {
@@ -557,15 +559,13 @@ class GraphSetup:
 
         # ── Bear Researcher ───────────────────────────────────
 
-        def bear_researcher(state: AgentState) -> Dict[str, Any]:
+        def bear_researcher(state: AgentState) -> dict[str, Any]:
             debate_state = state.get("investment_debate_state") or {}
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
 
             bull_history = debate_state.get("bull_history", [])
-            bull_last = (
-                "\n\n".join(bull_history[-3:]) if bull_history else "（无多头论点）"
-            )
+            bull_last = "\n\n".join(bull_history[-3:]) if bull_history else "（无多头论点）"
 
             reports = self._gather_reports(state)
 
@@ -576,8 +576,7 @@ class GraphSetup:
                 "1. 以「看空」开头你的回复\n"
                 "2. 挑战多头的每一个论点\n"
                 "3. 用数据和逻辑论证\n"
-                "4. 突出被忽视的风险因素\n\n"
-                + get_language_instruction(lang)
+                "4. 突出被忽视的风险因素\n\n" + get_language_instruction(lang)
             )
 
             human_msg = (
@@ -587,10 +586,12 @@ class GraphSetup:
                 "请给出你的看空论据:"
             )
 
-            response = deep_llm.invoke([
-                SystemMessage(content=system_msg),
-                ("human", human_msg),
-            ])
+            response = deep_llm.invoke(
+                [
+                    SystemMessage(content=system_msg),
+                    ("human", human_msg),
+                ]
+            )
             content = response.content
 
             return {
@@ -604,17 +605,13 @@ class GraphSetup:
 
         # ── Research Manager (judge) ──────────────────────────
 
-        def research_manager(state: AgentState) -> Dict[str, Any]:
+        def research_manager(state: AgentState) -> dict[str, Any]:
             debate_state = state.get("investment_debate_state") or {}
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
 
-            bull_hist = "\n\n---\n\n".join(
-                debate_state.get("bull_history", [])
-            )
-            bear_hist = "\n\n---\n\n".join(
-                debate_state.get("bear_history", [])
-            )
+            bull_hist = "\n\n---\n\n".join(debate_state.get("bull_history", []))
+            bear_hist = "\n\n---\n\n".join(debate_state.get("bear_history", []))
 
             reports = self._gather_reports(state)
 
@@ -625,8 +622,7 @@ class GraphSetup:
                 "输出格式:\n"
                 "1. 辩论总结（多头 vs 空头各 1-2 句话）\n"
                 "2. 你的判断（哪方更有说服力、为什么）\n"
-                "3. 投资方案（明确的评级和操作建议）\n\n"
-                + get_language_instruction(lang)
+                "3. 投资方案（明确的评级和操作建议）\n\n" + get_language_instruction(lang)
             )
 
             human_msg = (
@@ -637,10 +633,12 @@ class GraphSetup:
                 "请给出你的综合投资方案:"
             )
 
-            response = deep_llm.invoke([
-                SystemMessage(content=system_msg),
-                ("human", human_msg),
-            ])
+            response = deep_llm.invoke(
+                [
+                    SystemMessage(content=system_msg),
+                    ("human", human_msg),
+                ]
+            )
             plan = response.content
 
             return {
@@ -663,7 +661,7 @@ class GraphSetup:
         quick_llm = self.quick_llm
         lang = self.language
 
-        def trader(state: AgentState) -> Dict[str, Any]:
+        def trader(state: AgentState) -> dict[str, Any]:
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
             investment_plan = state.get("investment_plan", "")
@@ -678,8 +676,7 @@ class GraphSetup:
                 "3. 入场价格区间\n"
                 "4. 止损价位\n"
                 "5. 止盈目标\n"
-                "6. 交易时间框架\n\n"
-                + get_language_instruction(lang)
+                "6. 交易时间框架\n\n" + get_language_instruction(lang)
             )
 
             human_msg = (
@@ -689,10 +686,12 @@ class GraphSetup:
                 "请制定具体交易计划:"
             )
 
-            response = quick_llm.invoke([
-                SystemMessage(content=system_msg),
-                ("human", human_msg),
-            ])
+            response = quick_llm.invoke(
+                [
+                    SystemMessage(content=system_msg),
+                    ("human", human_msg),
+                ]
+            )
 
             return {"trader_investment_plan": response.content}
 
@@ -700,14 +699,14 @@ class GraphSetup:
 
     # ── Risk debate nodes ─────────────────────────────────────
 
-    def _create_risk_nodes(self) -> Dict[str, Callable]:
+    def _create_risk_nodes(self) -> dict[str, Callable]:
         """Create the three risk analysts and the Portfolio Manager."""
         deep_llm = self.deep_llm
         lang = self.language
 
         # ── Aggressive Analyst ────────────────────────────────
 
-        def aggressive_analyst(state: AgentState) -> Dict[str, Any]:
+        def aggressive_analyst(state: AgentState) -> dict[str, Any]:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
             plan = state.get("trader_investment_plan", "")
@@ -726,8 +725,7 @@ class GraphSetup:
                 "你是一位激进派风控分析师。你倾向高风险高回报策略。\n"
                 "你的任务是从积极的角度评估交易计划，指出其他分析师过度保守的地方，"
                 "强调被低估的机会。\n\n"
-                "规则: 以「激进派:」开头你的回复\n\n"
-                + get_language_instruction(lang)
+                "规则: 以「激进派:」开头你的回复\n\n" + get_language_instruction(lang)
             )
 
             human_msg = (
@@ -738,10 +736,12 @@ class GraphSetup:
                 "请给出你的激进派风控评估:"
             )
 
-            response = deep_llm.invoke([
-                SystemMessage(content=system_msg),
-                ("human", human_msg),
-            ])
+            response = deep_llm.invoke(
+                [
+                    SystemMessage(content=system_msg),
+                    ("human", human_msg),
+                ]
+            )
             content = response.content
 
             return {
@@ -756,7 +756,7 @@ class GraphSetup:
 
         # ── Conservative Analyst ──────────────────────────────
 
-        def conservative_analyst(state: AgentState) -> Dict[str, Any]:
+        def conservative_analyst(state: AgentState) -> dict[str, Any]:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
             plan = state.get("trader_investment_plan", "")
@@ -775,8 +775,7 @@ class GraphSetup:
                 "你是一位保守派风控分析师。你优先考虑资本保全和风险控制。\n"
                 "你的任务是从审慎的角度评估交易计划，指出潜在风险、"
                 "下行场景和被忽视的不利因素。\n\n"
-                "规则: 以「保守派:」开头你的回复\n\n"
-                + get_language_instruction(lang)
+                "规则: 以「保守派:」开头你的回复\n\n" + get_language_instruction(lang)
             )
 
             human_msg = (
@@ -787,10 +786,12 @@ class GraphSetup:
                 "请给出你的保守派风控评估:"
             )
 
-            response = deep_llm.invoke([
-                SystemMessage(content=system_msg),
-                ("human", human_msg),
-            ])
+            response = deep_llm.invoke(
+                [
+                    SystemMessage(content=system_msg),
+                    ("human", human_msg),
+                ]
+            )
             content = response.content
 
             return {
@@ -805,7 +806,7 @@ class GraphSetup:
 
         # ── Neutral Analyst ───────────────────────────────────
 
-        def neutral_analyst(state: AgentState) -> Dict[str, Any]:
+        def neutral_analyst(state: AgentState) -> dict[str, Any]:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
             plan = state.get("trader_investment_plan", "")
@@ -824,8 +825,7 @@ class GraphSetup:
                 "你是一位中性派风控分析师。你在激进和保守之间寻求平衡。\n"
                 "你的任务是客观评估交易计划的风险收益比，综合两方观点，"
                 "给出均衡的风险评估。\n\n"
-                "规则: 以「中性派:」开头你的回复\n\n"
-                + get_language_instruction(lang)
+                "规则: 以「中性派:」开头你的回复\n\n" + get_language_instruction(lang)
             )
 
             human_msg = (
@@ -836,10 +836,12 @@ class GraphSetup:
                 "请给出你的中性派风控评估:"
             )
 
-            response = deep_llm.invoke([
-                SystemMessage(content=system_msg),
-                ("human", human_msg),
-            ])
+            response = deep_llm.invoke(
+                [
+                    SystemMessage(content=system_msg),
+                    ("human", human_msg),
+                ]
+            )
             content = response.content
 
             return {
@@ -854,7 +856,7 @@ class GraphSetup:
 
         # ── Portfolio Manager (final judge) ───────────────────
 
-        def portfolio_manager(state: AgentState) -> Dict[str, Any]:
+        def portfolio_manager(state: AgentState) -> dict[str, Any]:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
@@ -862,15 +864,9 @@ class GraphSetup:
             investment_plan = state.get("investment_plan", "")
             reports = self._gather_reports(state)
 
-            agg_hist = "\n\n---\n\n".join(
-                risk_state.get("aggressive_history", [])
-            )
-            cons_hist = "\n\n---\n\n".join(
-                risk_state.get("conservative_history", [])
-            )
-            neut_hist = "\n\n---\n\n".join(
-                risk_state.get("neutral_history", [])
-            )
+            agg_hist = "\n\n---\n\n".join(risk_state.get("aggressive_history", []))
+            cons_hist = "\n\n---\n\n".join(risk_state.get("conservative_history", []))
+            neut_hist = "\n\n---\n\n".join(risk_state.get("neutral_history", []))
 
             system_msg = (
                 "你是基金经理（Portfolio Manager），最终决策者。\n\n"
@@ -885,8 +881,7 @@ class GraphSetup:
                 "3. 投资逻辑（核心理由）\n"
                 "4. 风险提示\n"
                 "5. 操作建议\n\n"
-                "**评级**: [你的评级]\n\n"
-                + get_language_instruction(lang)
+                "**评级**: [你的评级]\n\n" + get_language_instruction(lang)
             )
 
             human_msg = (
@@ -900,10 +895,12 @@ class GraphSetup:
                 "请给出你的最终交易决策:"
             )
 
-            response = deep_llm.invoke([
-                SystemMessage(content=system_msg),
-                ("human", human_msg),
-            ])
+            response = deep_llm.invoke(
+                [
+                    SystemMessage(content=system_msg),
+                    ("human", human_msg),
+                ]
+            )
             decision = response.content
 
             return {
@@ -926,7 +923,7 @@ class GraphSetup:
         """Create the Report Generator node that produces an HTML report."""
         output_dir = self.report_output_dir
 
-        def report_generator(state: AgentState) -> Dict[str, Any]:
+        def report_generator(state: AgentState) -> dict[str, Any]:
             from astock_trader.graph.report_generator import generate_report
             from astock_trader.graph.signal_processing import SignalProcessor
 
@@ -959,7 +956,7 @@ class GraphSetup:
     @staticmethod
     def _gather_reports(state: AgentState) -> str:
         """Collect all non-empty analyst reports into a single text block."""
-        parts: List[str] = []
+        parts: list[str] = []
         for field, label in [
             ("market_report", "市场/技术面分析"),
             ("sentiment_report", "市场情绪分析"),

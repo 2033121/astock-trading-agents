@@ -16,7 +16,6 @@ API 认证：通过环境变量 TUSHARE_TOKEN 设置，可在 https://tushare.pr
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Annotated, Any
@@ -33,13 +32,13 @@ _TIMEOUT = 30
 #  辅助函数
 # ---------------------------------------------------------------------------
 
+
 def _get_token() -> str:
     """获取 Tushare API Token。必须通过环境变量 TUSHARE_TOKEN 设置。"""
     token = os.environ.get("TUSHARE_TOKEN", "").strip()
     if not token:
-        raise EnvironmentError(
-            "未找到 Tushare API Token。请设置环境变量 TUSHARE_TOKEN，"
-            "可在 https://tushare.pro/register 注册获取。"
+        raise OSError(
+            "未找到 Tushare API Token。请设置环境变量 TUSHARE_TOKEN，可在 https://tushare.pro/register 注册获取。"
         )
     return token
 
@@ -57,7 +56,6 @@ def _to_ts_code(symbol: str) -> str:
     symbol = symbol.strip()
     if "." in symbol:
         return symbol.upper()
-    code = symbol.lstrip("0")
     if symbol.startswith(("6", "9", "11")):
         return f"{symbol}.SH"
     return f"{symbol}.SZ"
@@ -68,8 +66,7 @@ def _from_ts_code(ts_code: str) -> str:
     return ts_code.split(".")[0] if "." in ts_code else ts_code
 
 
-def _call_api(api_name: str, params: dict[str, Any] | None = None,
-              fields: str | None = None) -> dict:
+def _call_api(api_name: str, params: dict[str, Any] | None = None, fields: str | None = None) -> dict:
     """调用 Tushare Pro REST API。"""
     token = _get_token()
     if not token:
@@ -156,40 +153,89 @@ def _format_cell(field: str, value: Any) -> str:
 
 # 持股数量字段（股单位）
 _SHARE_FIELDS = {
-    "hold_amount", "change_vol", "after_share",
+    "hold_amount",
+    "change_vol",
+    "after_share",
 }
 
 # 股本字段（万股单位）
 _SHARE_CAPITAL_FIELDS = {
-    "total_share", "float_share", "free_share",
+    "total_share",
+    "float_share",
+    "free_share",
 }
 
 
 # 金额字段（万元单位）— 仅限真正的金额字段
 _MONEY_FIELDS = {
-    "total_revenue", "revenue", "total_cogs", "oper_cost", "n_income",
-    "n_income_attr_p", "operate_profit", "total_profit", "total_mv",
-    "circ_mv", "buy_sm_amount", "sell_sm_amount", "buy_md_amount",
-    "sell_md_amount", "buy_lg_amount", "sell_lg_amount", "buy_elg_amount",
-    "sell_elg_amount", "net_mf_amount",
-    "buy_amount", "sell_amount", "total_amount",
-    "total_assets", "total_liab", "money_cap", "accounts_receiv",
-    "inventories", "fix_assets",
-    "n_cashflow_act", "n_cashflow_inv_act", "n_cash_flows_fnc_act",
-    "c_fr_sale_sg", "c_pay_dist_dpcp_int_exp",
-    "net_profit_min", "net_profit_max", "last_parent_net",
+    "total_revenue",
+    "revenue",
+    "total_cogs",
+    "oper_cost",
+    "n_income",
+    "n_income_attr_p",
+    "operate_profit",
+    "total_profit",
+    "total_mv",
+    "circ_mv",
+    "buy_sm_amount",
+    "sell_sm_amount",
+    "buy_md_amount",
+    "sell_md_amount",
+    "buy_lg_amount",
+    "sell_lg_amount",
+    "buy_elg_amount",
+    "sell_elg_amount",
+    "net_mf_amount",
+    "buy_amount",
+    "sell_amount",
+    "total_amount",
+    "total_assets",
+    "total_liab",
+    "money_cap",
+    "accounts_receiv",
+    "inventories",
+    "fix_assets",
+    "n_cashflow_act",
+    "n_cashflow_inv_act",
+    "n_cash_flows_fnc_act",
+    "c_fr_sale_sg",
+    "c_pay_dist_dpcp_int_exp",
+    "net_profit_min",
+    "net_profit_max",
+    "last_parent_net",
 }
 
 # 百分比字段（值为真实百分比，如 52.22 表示 52.22%）
 _PCT_FIELDS = {
-    "turnover_rate", "turnover_rate_f", "dv_ratio", "dv_ttm",
-    "p_change_min", "p_change_max", "pct_chg",
-    "change_ratio", "hold_ratio", "hold_float_ratio",
-    "roe", "roe_waa", "roe_dt", "roa", "roic", "npta",
-    "gross_margin", "netprofit_margin", "grossprofit_margin",
-    "debt_to_assets", "current_ratio", "quick_ratio",
-    "q_roe", "q_dt_roe", "q_npta",
-    "netprofit_yoy", "or_yoy", "q_netprofit_yoy",
+    "turnover_rate",
+    "turnover_rate_f",
+    "dv_ratio",
+    "dv_ttm",
+    "p_change_min",
+    "p_change_max",
+    "pct_chg",
+    "change_ratio",
+    "hold_ratio",
+    "hold_float_ratio",
+    "roe",
+    "roe_waa",
+    "roe_dt",
+    "roa",
+    "roic",
+    "npta",
+    "gross_margin",
+    "netprofit_margin",
+    "grossprofit_margin",
+    "debt_to_assets",
+    "current_ratio",
+    "quick_ratio",
+    "q_roe",
+    "q_dt_roe",
+    "q_npta",
+    "netprofit_yoy",
+    "or_yoy",
+    "q_netprofit_yoy",
 }
 
 
@@ -197,37 +243,69 @@ def _get_field_labels(fields: list[str]) -> dict[str, str]:
     """为常见字段提供中文标签。"""
     label_map = {
         # 行情
-        "ts_code": "代码", "trade_date": "日期", "close": "收盘价",
-        "open": "开盘价", "high": "最高价", "low": "最低价",
-        "pre_close": "昨收", "change": "涨跌额", "pct_chg": "涨跌幅%",
-        "vol": "成交量(手)", "amount": "成交额(千元)",
+        "ts_code": "代码",
+        "trade_date": "日期",
+        "close": "收盘价",
+        "open": "开盘价",
+        "high": "最高价",
+        "low": "最低价",
+        "pre_close": "昨收",
+        "change": "涨跌额",
+        "pct_chg": "涨跌幅%",
+        "vol": "成交量(手)",
+        "amount": "成交额(千元)",
         # 每日指标
-        "turnover_rate": "换手率%", "turnover_rate_f": "自由换手率%",
-        "volume_ratio": "量比", "pe": "PE", "pe_ttm": "PE(TTM)",
-        "pb": "PB", "ps": "PS", "ps_ttm": "PS(TTM)",
-        "dv_ratio": "股息率%", "dv_ttm": "股息率%(TTM)",
-        "total_share": "总股本(万股)", "float_share": "流通股本(万股)",
-        "free_share": "自由流通股本(万)", "total_mv": "总市值(万元)",
+        "turnover_rate": "换手率%",
+        "turnover_rate_f": "自由换手率%",
+        "volume_ratio": "量比",
+        "pe": "PE",
+        "pe_ttm": "PE(TTM)",
+        "pb": "PB",
+        "ps": "PS",
+        "ps_ttm": "PS(TTM)",
+        "dv_ratio": "股息率%",
+        "dv_ttm": "股息率%(TTM)",
+        "total_share": "总股本(万股)",
+        "float_share": "流通股本(万股)",
+        "free_share": "自由流通股本(万)",
+        "total_mv": "总市值(万元)",
         "circ_mv": "流通市值(万元)",
         # 财务
-        "ann_date": "公告日期", "end_date": "报告期", "f_ann_date": "实际公告日",
-        "report_type": "报告类型", "comp_type": "公司类型",
-        "basic_eps": "基本EPS", "diluted_eps": "稀释EPS",
-        "total_revenue": "营业总收入", "revenue": "营业收入",
-        "total_cogs": "营业总成本", "oper_cost": "营业成本",
-        "sell_exp": "销售费用", "admin_exp": "管理费用", "fin_exp": "财务费用",
-        "rd_exp": "研发费用", "operate_profit": "营业利润",
-        "total_profit": "利润总额", "income_tax": "所得税",
-        "n_income": "净利润", "n_income_attr_p": "归属母公司净利润",
-        "ebit": "EBIT", "ebitda": "EBITDA",
+        "ann_date": "公告日期",
+        "end_date": "报告期",
+        "f_ann_date": "实际公告日",
+        "report_type": "报告类型",
+        "comp_type": "公司类型",
+        "basic_eps": "基本EPS",
+        "diluted_eps": "稀释EPS",
+        "total_revenue": "营业总收入",
+        "revenue": "营业收入",
+        "total_cogs": "营业总成本",
+        "oper_cost": "营业成本",
+        "sell_exp": "销售费用",
+        "admin_exp": "管理费用",
+        "fin_exp": "财务费用",
+        "rd_exp": "研发费用",
+        "operate_profit": "营业利润",
+        "total_profit": "利润总额",
+        "income_tax": "所得税",
+        "n_income": "净利润",
+        "n_income_attr_p": "归属母公司净利润",
+        "ebit": "EBIT",
+        "ebitda": "EBITDA",
         # 资产负债表
-        "total_assets": "总资产", "total_liab": "总负债",
+        "total_assets": "总资产",
+        "total_liab": "总负债",
         "total_hldr_eqy_exc_min_int": "股东权益(不含少数)",
         "total_hldr_eqy_inc_min_int": "股东权益(含少数)",
-        "total_cur_assets": "流动资产合计", "total_cur_liab": "流动负债合计",
-        "total_nca": "非流动资产合计", "total_ncl": "非流动负债合计",
-        "money_cap": "货币资金", "accounts_receiv": "应收账款",
-        "inventories": "存货", "fix_assets": "固定资产",
+        "total_cur_assets": "流动资产合计",
+        "total_cur_liab": "流动负债合计",
+        "total_nca": "非流动资产合计",
+        "total_ncl": "非流动负债合计",
+        "money_cap": "货币资金",
+        "accounts_receiv": "应收账款",
+        "inventories": "存货",
+        "fix_assets": "固定资产",
         # 现金流
         "n_cashflow_act": "经营活动现金流净额",
         "n_cashflow_inv_act": "投资活动现金流净额",
@@ -235,42 +313,73 @@ def _get_field_labels(fields: list[str]) -> dict[str, str]:
         "c_fr_sale_sg": "销售商品收到的现金",
         "c_pay_dist_dpcp_int_exp": "分配股利利润偿付利息",
         # 财务指标
-        "eps": "每股收益", "dt_eps": "扣非EPS",
-        "gross_margin": "毛利率%", "netprofit_margin": "净利率%",
-        "roe": "ROE%", "roe_waa": "加权ROE%", "roe_dt": "扣非ROE%",
-        "roa": "ROA%", "roic": "ROIC%",
-        "current_ratio": "流动比率", "quick_ratio": "速动比率",
+        "eps": "每股收益",
+        "dt_eps": "扣非EPS",
+        "gross_margin": "毛利率%",
+        "netprofit_margin": "净利率%",
+        "roe": "ROE%",
+        "roe_waa": "加权ROE%",
+        "roe_dt": "扣非ROE%",
+        "roa": "ROA%",
+        "roic": "ROIC%",
+        "current_ratio": "流动比率",
+        "quick_ratio": "速动比率",
         "debt_to_assets": "资产负债率%",
-        "or_yoy": "营收同比增长%", "netprofit_yoy": "净利润同比增长%",
-        "q_roe": "单季度ROE%", "q_netprofit_yoy": "单季度净利润同比%",
+        "or_yoy": "营收同比增长%",
+        "netprofit_yoy": "净利润同比增长%",
+        "q_roe": "单季度ROE%",
+        "q_netprofit_yoy": "单季度净利润同比%",
         # 资金流向
-        "buy_sm_vol": "小单买入量", "buy_sm_amount": "小单买入额",
-        "sell_sm_vol": "小单卖出量", "sell_sm_amount": "小单卖出额",
-        "buy_md_vol": "中单买入量", "buy_md_amount": "中单买入额",
-        "sell_md_vol": "中单卖出量", "sell_md_amount": "中单卖出额",
-        "buy_lg_vol": "大单买入量", "buy_lg_amount": "大单买入额",
-        "sell_lg_vol": "大单卖出量", "sell_lg_amount": "大单卖出额",
-        "buy_elg_vol": "超大单买入量", "buy_elg_amount": "超大单买入额",
-        "sell_elg_vol": "超大单卖出量", "sell_elg_amount": "超大单卖出额",
-        "net_mf_vol": "净流入量", "net_mf_amount": "净流入额",
+        "buy_sm_vol": "小单买入量",
+        "buy_sm_amount": "小单买入额",
+        "sell_sm_vol": "小单卖出量",
+        "sell_sm_amount": "小单卖出额",
+        "buy_md_vol": "中单买入量",
+        "buy_md_amount": "中单买入额",
+        "sell_md_vol": "中单卖出量",
+        "sell_md_amount": "中单卖出额",
+        "buy_lg_vol": "大单买入量",
+        "buy_lg_amount": "大单买入额",
+        "sell_lg_vol": "大单卖出量",
+        "sell_lg_amount": "大单卖出额",
+        "buy_elg_vol": "超大单买入量",
+        "buy_elg_amount": "超大单买入额",
+        "sell_elg_vol": "超大单卖出量",
+        "sell_elg_amount": "超大单卖出额",
+        "net_mf_vol": "净流入量",
+        "net_mf_amount": "净流入额",
         # 股东
-        "holder_name": "股东名称", "hold_amount": "持股数量",
-        "hold_ratio": "持股比例%", "hold_float_ratio": "流通持股比%",
-        "hold_change": "持股变动", "holder_type": "股东类型",
-        "in_de": "增减持", "change_vol": "变动数量",
-        "change_ratio": "变动比例", "after_share": "变动后持股",
-        "after_ratio": "变动后比例", "avg_price": "均价",
+        "holder_name": "股东名称",
+        "hold_amount": "持股数量",
+        "hold_ratio": "持股比例%",
+        "hold_float_ratio": "流通持股比%",
+        "hold_change": "持股变动",
+        "holder_type": "股东类型",
+        "in_de": "增减持",
+        "change_vol": "变动数量",
+        "change_ratio": "变动比例",
+        "after_share": "变动后持股",
+        "after_ratio": "变动后比例",
+        "avg_price": "均价",
         # 业绩预告
-        "type": "预告类型", "p_change_min": "预计变动下限%",
-        "p_change_max": "预计变动上限%", "net_profit_min": "预计净利润下限",
-        "net_profit_max": "预计净利润上限", "summary": "预告摘要",
+        "type": "预告类型",
+        "p_change_min": "预计变动下限%",
+        "p_change_max": "预计变动上限%",
+        "net_profit_min": "预计净利润下限",
+        "net_profit_max": "预计净利润上限",
+        "summary": "预告摘要",
         "change_reason": "变动原因",
         # 分红
-        "stk_div": "每股送股", "cash_div": "每股分红(元)",
-        "record_date": "股权登记日", "ex_date": "除权除息日",
-        "div_listdate": "分红上市日", "base_date": "分红基准日",
+        "stk_div": "每股送股",
+        "cash_div": "每股分红(元)",
+        "record_date": "股权登记日",
+        "ex_date": "除权除息日",
+        "div_listdate": "分红上市日",
+        "base_date": "分红基准日",
         # 新闻
-        "datetime": "时间", "title": "标题", "content": "内容",
+        "datetime": "时间",
+        "title": "标题",
+        "content": "内容",
         "channels": "来源",
     }
     return {f: label_map.get(f, f) for f in fields}
@@ -278,6 +387,7 @@ def _get_field_labels(fields: list[str]) -> dict[str, str]:
 
 def _safe_call(func):
     """统一错误包装装饰器。"""
+
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
@@ -289,6 +399,7 @@ def _safe_call(func):
             return "[ERROR] Tushare API 连接失败，请检查网络"
         except Exception as exc:
             return f"[ERROR] Tushare API 调用异常: {exc}"
+
     wrapper.__name__ = func.__name__
     wrapper.__doc__ = func.__doc__
     return wrapper
@@ -297,6 +408,7 @@ def _safe_call(func):
 # ---------------------------------------------------------------------------
 # 公开数据函数
 # ---------------------------------------------------------------------------
+
 
 @_safe_call
 def get_daily_basic(
@@ -529,6 +641,7 @@ def get_news(
     if not params:
         # 默认最近7天
         from datetime import datetime, timedelta
+
         now = datetime.now()
         params["start_date"] = (now - timedelta(days=7)).strftime("%Y-%m-%d 00:00:00")
         params["end_date"] = now.strftime("%Y-%m-%d 23:59:59")
@@ -538,7 +651,7 @@ def get_news(
     items = data.get("items", [])
 
     if not items:
-        return f"[Tushare] 未找到相关新闻。"
+        return "[Tushare] 未找到相关新闻。"
 
     parts = [f"### Tushare 新闻快讯（共 {len(items)} 条）", ""]
     for i, row in enumerate(items[:20]):
@@ -549,7 +662,7 @@ def get_news(
         content = row_dict.get("content", "")
 
         meta = " | ".join(filter(None, [dt, channels]))
-        parts.append(f"**{i+1}. {title}**")
+        parts.append(f"**{i + 1}. {title}**")
         if meta:
             parts.append(f"   {meta}")
         if content:

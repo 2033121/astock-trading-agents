@@ -20,15 +20,13 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import typer
 from rich.console import Console
-from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
@@ -54,18 +52,18 @@ _DEFAULT_CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".astock_trader")
 _USER_CONFIG_PATH = os.path.join(_DEFAULT_CONFIG_DIR, "user_config.json")
 
 
-def _load_user_config() -> Dict[str, Any]:
+def _load_user_config() -> dict[str, Any]:
     """Load user-level config overrides (persisted via ``config --set``)."""
     if os.path.exists(_USER_CONFIG_PATH):
         try:
-            with open(_USER_CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(_USER_CONFIG_PATH, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             pass
     return {}
 
 
-def _save_user_config(cfg: Dict[str, Any]) -> None:
+def _save_user_config(cfg: dict[str, Any]) -> None:
     """Persist user-level config to disk."""
     Path(_DEFAULT_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
     with open(_USER_CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -73,15 +71,15 @@ def _save_user_config(cfg: Dict[str, Any]) -> None:
 
 
 def _build_config(
-    provider: Optional[str] = None,
-    deep_model: Optional[str] = None,
-    quick_model: Optional[str] = None,
-    base_url: Optional[str] = None,
+    provider: str | None = None,
+    deep_model: str | None = None,
+    quick_model: str | None = None,
+    base_url: str | None = None,
     language: str = "Chinese",
     checkpoint: bool = False,
     max_debate_rounds: int = 1,
     max_risk_discuss_rounds: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Merge DEFAULT_CONFIG + user config + CLI overrides."""
     from astock_trader.default_config import DEFAULT_CONFIG
 
@@ -106,7 +104,7 @@ def _build_config(
     return cfg
 
 
-def _format_state_summary(state: Dict[str, Any], rating: str) -> str:
+def _format_state_summary(state: dict[str, Any], rating: str) -> str:
     """Build a Markdown summary of the analysis results."""
     company = state.get("company_of_interest", "?")
     trade_date = state.get("trade_date", "?")
@@ -177,45 +175,23 @@ def _format_state_summary(state: Dict[str, Any], rating: str) -> str:
 @app.command()
 def analyze(
     symbol: str = typer.Argument(..., help="股票代码，如 000001、600519"),
-    date: Optional[str] = typer.Option(
-        None, "--date", "-d", help="交易日期 YYYY-MM-DD，默认今天"
-    ),
-    provider: str = typer.Option(
-        "openai", "--provider", "-p", help="LLM 提供商 (openai/deepseek/qwen/glm/...)"
-    ),
-    deep_model: Optional[str] = typer.Option(
-        None, "--deep-model", help="深度思考模型名称"
-    ),
-    quick_model: Optional[str] = typer.Option(
-        None, "--quick-model", help="快速思考模型名称"
-    ),
-    base_url: Optional[str] = typer.Option(
-        None, "--base-url", help="自定义 API 基础 URL"
-    ),
-    language: str = typer.Option(
-        "Chinese", "--language", "-l", help="输出语言 (Chinese/English)"
-    ),
-    analysts: Optional[str] = typer.Option(
+    date: str | None = typer.Option(None, "--date", "-d", help="交易日期 YYYY-MM-DD，默认今天"),
+    provider: str = typer.Option("openai", "--provider", "-p", help="LLM 提供商 (openai/deepseek/qwen/glm/...)"),
+    deep_model: str | None = typer.Option(None, "--deep-model", help="深度思考模型名称"),
+    quick_model: str | None = typer.Option(None, "--quick-model", help="快速思考模型名称"),
+    base_url: str | None = typer.Option(None, "--base-url", help="自定义 API 基础 URL"),
+    language: str = typer.Option("Chinese", "--language", "-l", help="输出语言 (Chinese/English)"),
+    analysts: str | None = typer.Option(
         None,
         "--analysts",
         "-a",
         help="分析师组合，逗号分隔 (market,social,news,fundamentals)",
     ),
-    debate_rounds: int = typer.Option(
-        1, "--debate-rounds", help="多空辩论轮数"
-    ),
-    risk_rounds: int = typer.Option(
-        1, "--risk-rounds", help="风控讨论轮数"
-    ),
-    checkpoint: bool = typer.Option(
-        False, "--checkpoint", help="启用 SQLite 检查点（崩溃恢复）"
-    ),
-    output: Optional[str] = typer.Option(
-        None, "--output", "-o", help="输出文件路径 (JSON)"
-    ),
-    quiet: bool = typer.Option(
-        False, "--quiet", "-q", help="安静模式，仅输出结果"
-    ),
+    debate_rounds: int = typer.Option(1, "--debate-rounds", help="多空辩论轮数"),
+    risk_rounds: int = typer.Option(1, "--risk-rounds", help="风控讨论轮数"),
+    checkpoint: bool = typer.Option(False, "--checkpoint", help="启用 SQLite 检查点（崩溃恢复）"),
+    output: str | None = typer.Option(None, "--output", "-o", help="输出文件路径 (JSON)"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="安静模式，仅输出结果"),
 ) -> None:
     """运行多 Agent 分析流水线。
 
@@ -236,10 +212,7 @@ def analyze(
         selected = [a.strip() for a in analysts.split(",")]
         for a in selected:
             if a not in valid_analysts:
-                console.print(
-                    f"[red]无效的分析师: {a}[/red]  "
-                    f"可选: {', '.join(valid_analysts)}"
-                )
+                console.print(f"[red]无效的分析师: {a}[/red]  可选: {', '.join(valid_analysts)}")
                 raise typer.Exit(1)
     else:
         selected = valid_analysts
@@ -292,9 +265,7 @@ def analyze(
         )
 
         if not quiet:
-            console.print(
-                "[bold yellow]正在执行分析流水线（这可能需要几分钟）...[/bold yellow]\n"
-            )
+            console.print("[bold yellow]正在执行分析流水线（这可能需要几分钟）...[/bold yellow]\n")
 
         start_time = time.time()
         final_state, rating = graph.propagate(symbol, trade_date)
@@ -308,10 +279,7 @@ def analyze(
 
     # ── Display results ───────────────────────────────────────
     if not quiet:
-        console.print(
-            f"\n[bold green]分析完成[/bold green] "
-            f"(耗时 {elapsed:.1f}s)\n"
-        )
+        console.print(f"\n[bold green]分析完成[/bold green] (耗时 {elapsed:.1f}s)\n")
 
     # Rating badge
     rating_colors = {
@@ -372,7 +340,7 @@ def analyze(
 
 @app.command()
 def history(
-    symbol: Optional[str] = typer.Argument(None, help="股票代码（留空显示全部）"),
+    symbol: str | None = typer.Argument(None, help="股票代码（留空显示全部）"),
     limit: int = typer.Option(10, "--limit", "-n", help="显示条数"),
 ) -> None:
     """查看分析历史记录。"""
@@ -442,12 +410,8 @@ def history(
 
 @app.command()
 def memory(
-    action: str = typer.Argument(
-        "show", help="操作: show / clear / resolve"
-    ),
-    symbol: Optional[str] = typer.Option(
-        None, "--symbol", "-s", help="股票代码"
-    ),
+    action: str = typer.Argument("show", help="操作: show / clear / resolve"),
+    symbol: str | None = typer.Option(None, "--symbol", "-s", help="股票代码"),
 ) -> None:
     """管理决策记忆日志。
 
@@ -494,9 +458,7 @@ def memory(
 
     elif action == "clear":
         if symbol:
-            console.print(
-                f"[yellow]清除 {symbol} 的记忆需要手动编辑记忆日志文件。[/yellow]"
-            )
+            console.print(f"[yellow]清除 {symbol} 的记忆需要手动编辑记忆日志文件。[/yellow]")
             console.print(f"[dim]文件路径: {mem._path}[/dim]")
         else:
             if typer.confirm("确认清除所有记忆条目？此操作不可撤销。"):
@@ -527,31 +489,19 @@ def memory(
             table.add_row(e["date"], e["ticker"], e.get("rating", "?"), summary)
 
         console.print(table)
-        console.print(
-            "\n[dim]提示: 使用 Python API 的 batch_update_with_outcomes() "
-            "方法来标记已解决。[/dim]"
-        )
+        console.print("\n[dim]提示: 使用 Python API 的 batch_update_with_outcomes() 方法来标记已解决。[/dim]")
 
     else:
-        console.print(
-            f"[red]未知操作: {action}[/red]  "
-            "可选: show / clear / resolve"
-        )
+        console.print(f"[red]未知操作: {action}[/red]  可选: show / clear / resolve")
         raise typer.Exit(1)
 
 
 @app.command("config")
 def config_cmd(
     show: bool = typer.Option(False, "--show", help="显示当前完整配置"),
-    set_key: Optional[str] = typer.Option(
-        None, "--set", help="设置配置项键名"
-    ),
-    set_value: Optional[str] = typer.Option(
-        None, "--value", help="配置项值"
-    ),
-    reset: bool = typer.Option(
-        False, "--reset", help="重置为默认配置"
-    ),
+    set_key: str | None = typer.Option(None, "--set", help="设置配置项键名"),
+    set_value: str | None = typer.Option(None, "--value", help="配置项值"),
+    reset: bool = typer.Option(False, "--reset", help="重置为默认配置"),
 ) -> None:
     """查看和修改配置。
 
@@ -562,7 +512,6 @@ def config_cmd(
         astock-trader config --set deep_think_llm --value deepseek-reasoner
         astock-trader config --reset
     """
-    from astock_trader.default_config import DEFAULT_CONFIG
 
     if reset:
         if typer.confirm("确认重置为用户默认配置？"):
@@ -637,23 +586,23 @@ def config_cmd(
 #  Utilities
 # ────────────────────────────────────────────────────────────────
 
-def _serialise_state(state: Dict[str, Any]) -> Dict[str, Any]:
+
+def _serialise_state(state: dict[str, Any]) -> dict[str, Any]:
     """Convert AgentState to a JSON-serialisable dictionary."""
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     for key, value in state.items():
         if key == "messages":
             # Serialise messages to dicts
             msgs = []
             for m in value:
-                msg_dict: Dict[str, Any] = {"type": getattr(m, "type", "unknown")}
+                msg_dict: dict[str, Any] = {"type": getattr(m, "type", "unknown")}
                 if hasattr(m, "content"):
                     msg_dict["content"] = m.content
                 if hasattr(m, "name") and m.name:
                     msg_dict["name"] = m.name
                 if hasattr(m, "tool_calls") and m.tool_calls:
                     msg_dict["tool_calls"] = [
-                        {"name": tc.get("name", ""), "args": tc.get("args", {})}
-                        for tc in m.tool_calls
+                        {"name": tc.get("name", ""), "args": tc.get("args", {})} for tc in m.tool_calls
                     ]
                 msgs.append(msg_dict)
             result[key] = msgs

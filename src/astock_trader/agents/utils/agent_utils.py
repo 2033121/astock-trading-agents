@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def get_language_instruction(language: str = "Chinese") -> str:
     return instructions.get(language, f"请使用{language}输出你的分析结果。")
 
 
-def create_msg_delete(agent_name: str = "") -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+def create_msg_delete(agent_name: str = "") -> Callable[[dict[str, Any]], dict[str, Any]]:
     """创建一个消息清理函数，用于清除历史消息并添加继续占位符。
 
     在辩论场景中，当需要将长对话历史压缩为单条摘要消息时使用。
@@ -83,7 +84,7 @@ def create_msg_delete(agent_name: str = "") -> Callable[[Dict[str, Any]], Dict[s
     """
     label = agent_name or "Agent"
 
-    def _clear_messages(state: Dict[str, Any]) -> Dict[str, Any]:
+    def _clear_messages(state: dict[str, Any]) -> dict[str, Any]:
         """清除 messages 列表并添加一条 Continue 占位符。"""
         placeholder = {
             "role": "assistant",
@@ -94,7 +95,7 @@ def create_msg_delete(agent_name: str = "") -> Callable[[Dict[str, Any]], Dict[s
     return _clear_messages
 
 
-def format_number(value: Optional[float], precision: int = 2) -> str:
+def format_number(value: float | None, precision: int = 2) -> str:
     """格式化数字为中文习惯的字符串表示。
 
     Parameters

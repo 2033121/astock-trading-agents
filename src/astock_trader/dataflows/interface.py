@@ -25,39 +25,39 @@ logger = logging.getLogger(__name__)
 
 VENDOR_METHODS: dict[str, dict[str, str]] = {
     # --- Core price / technical data (akshare) ---
-    "get_stock_data":       {"akshare": "get_stock_data"},
-    "get_indicators":       {"akshare": "get_indicators"},
+    "get_stock_data": {"akshare": "get_stock_data"},
+    "get_indicators": {"akshare": "get_indicators"},
     # --- Financial data (Tushare → MX → akshare fallback) ---
-    "get_fundamentals":     {"tushare": "get_fundamentals", "mx": "get_fundamentals", "akshare": "get_fundamentals"},
-    "get_balance_sheet":    {"tushare": "get_balance_sheet", "mx": "get_balance_sheet", "akshare": "get_balance_sheet"},
-    "get_cashflow":         {"tushare": "get_cashflow", "mx": "get_cashflow", "akshare": "get_cashflow"},
+    "get_fundamentals": {"tushare": "get_fundamentals", "mx": "get_fundamentals", "akshare": "get_fundamentals"},
+    "get_balance_sheet": {"tushare": "get_balance_sheet", "mx": "get_balance_sheet", "akshare": "get_balance_sheet"},
+    "get_cashflow": {"tushare": "get_cashflow", "mx": "get_cashflow", "akshare": "get_cashflow"},
     "get_income_statement": {"tushare": "get_income", "mx": "get_income_statement", "akshare": "get_income_statement"},
     # --- News (MX → Tushare → eastmoney → akshare fallback) ---
-    "get_news":             {"mx": "get_news", "tushare": "get_news", "eastmoney": "get_news", "akshare": "get_news"},
-    "get_global_news":      {"mx": "get_global_news", "eastmoney": "get_global_news"},
+    "get_news": {"mx": "get_news", "tushare": "get_news", "eastmoney": "get_news", "akshare": "get_news"},
+    "get_global_news": {"mx": "get_global_news", "eastmoney": "get_global_news"},
     "get_insider_transactions": {"akshare": "get_insider_transactions"},
     # --- MX-exclusive data ---
-    "get_stock_valuation":  {"mx": "get_stock_valuation"},
+    "get_stock_valuation": {"mx": "get_stock_valuation"},
     "get_shareholder_info": {"mx": "get_shareholder_info"},
     # --- Tushare-exclusive data (structured / quantitative) ---
-    "get_daily_basic":      {"tushare": "get_daily_basic"},
-    "get_fina_indicator":   {"tushare": "get_fina_indicator"},
-    "get_moneyflow":        {"tushare": "get_moneyflow"},
-    "get_top10_holders":    {"tushare": "get_top10_holders"},
+    "get_daily_basic": {"tushare": "get_daily_basic"},
+    "get_fina_indicator": {"tushare": "get_fina_indicator"},
+    "get_moneyflow": {"tushare": "get_moneyflow"},
+    "get_top10_holders": {"tushare": "get_top10_holders"},
     "get_top10_floatholders": {"tushare": "get_top10_floatholders"},
-    "get_holdertrade":      {"tushare": "get_holdertrade"},
-    "get_forecast":         {"tushare": "get_forecast"},
-    "get_express":          {"tushare": "get_express"},
-    "get_dividend":         {"tushare": "get_dividend"},
-    "get_margin_detail":    {"tushare": "get_margin_detail"},
+    "get_holdertrade": {"tushare": "get_holdertrade"},
+    "get_forecast": {"tushare": "get_forecast"},
+    "get_express": {"tushare": "get_express"},
+    "get_dividend": {"tushare": "get_dividend"},
+    "get_margin_detail": {"tushare": "get_margin_detail"},
 }
 
 # Mapping from vendor label to the module that contains its implementation.
 _VENDOR_MODULES: dict[str, str] = {
-    "akshare":  "astock_trader.dataflows.akshare_data",
+    "akshare": "astock_trader.dataflows.akshare_data",
     "eastmoney": "astock_trader.dataflows.eastmoney_news",
-    "mx":       "astock_trader.dataflows.mx_data",
-    "tushare":  "astock_trader.dataflows.tushare_data",
+    "mx": "astock_trader.dataflows.mx_data",
+    "tushare": "astock_trader.dataflows.tushare_data",
 }
 
 # Cache of already-imported modules.
@@ -84,6 +84,7 @@ def _import_vendor_module(vendor: str) -> Any | None:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def route_to_vendor(method: str, *args: Any, **kwargs: Any) -> Any:
     """Route a data-tool call to the configured vendor implementation.

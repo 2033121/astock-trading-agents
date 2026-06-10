@@ -5,10 +5,10 @@ import pytest
 from astock_trader.agents.utils.rating import parse_rating
 from astock_trader.graph.signal_processing import SignalProcessor
 
-
 # ────────────────────────────────────────────────────────────────
 #  parse_rating — label pattern matching
 # ────────────────────────────────────────────────────────────────
+
 
 class TestParseRatingLabelPattern:
     """Tests for parse_rating() with label patterns (评级: X / **评级**: X)."""
@@ -37,6 +37,7 @@ class TestParseRatingLabelPattern:
 # ────────────────────────────────────────────────────────────────
 #  parse_rating — English compatibility
 # ────────────────────────────────────────────────────────────────
+
 
 class TestParseRatingEnglish:
     """Tests for parse_rating() English label patterns (Rating: Buy)."""
@@ -69,6 +70,7 @@ class TestParseRatingEnglish:
 # ────────────────────────────────────────────────────────────────
 #  parse_rating — full-text keyword search
 # ────────────────────────────────────────────────────────────────
+
 
 class TestParseRatingFullText:
     """Tests for parse_rating() full-text keyword fallback."""
@@ -103,6 +105,7 @@ class TestParseRatingFullText:
 #  parse_rating — default / edge cases
 # ────────────────────────────────────────────────────────────────
 
+
 class TestParseRatingEdgeCases:
     """Tests for parse_rating() edge cases and defaults."""
 
@@ -136,6 +139,7 @@ class TestParseRatingEdgeCases:
 # ────────────────────────────────────────────────────────────────
 #  SignalProcessor
 # ────────────────────────────────────────────────────────────────
+
 
 class TestSignalProcessor:
     """Tests for SignalProcessor.process_signal()."""

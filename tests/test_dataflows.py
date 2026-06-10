@@ -1,20 +1,21 @@
 """Tests for astock_trader.dataflows.interface — vendor routing system."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from astock_trader.dataflows.config import get_config, set_config
 from astock_trader.dataflows.interface import (
     VENDOR_METHODS,
-    route_to_vendor,
-    list_available_methods,
     _import_vendor_module,
+    list_available_methods,
+    route_to_vendor,
 )
-from astock_trader.dataflows.config import set_config, get_config
-
 
 # ────────────────────────────────────────────────────────────────
 #  Fixtures
 # ────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(autouse=True)
 def reset_config():
@@ -28,6 +29,7 @@ def reset_config():
 def clear_module_cache():
     """Clear the vendor module cache between tests."""
     from astock_trader.dataflows import interface
+
     interface._module_cache.clear()
     yield
     interface._module_cache.clear()
@@ -36,6 +38,7 @@ def clear_module_cache():
 # ────────────────────────────────────────────────────────────────
 #  VENDOR_METHODS structure
 # ────────────────────────────────────────────────────────────────
+
 
 class TestVendorMethodsTable:
     """Tests for the VENDOR_METHODS routing table."""
@@ -76,6 +79,7 @@ class TestVendorMethodsTable:
 #  route_to_vendor — dispatch
 # ────────────────────────────────────────────────────────────────
 
+
 class TestRouteToVendorDispatch:
     """Tests for route_to_vendor dispatching."""
 
@@ -96,9 +100,7 @@ class TestRouteToVendorDispatch:
         ):
             result = route_to_vendor("get_stock_data", "000001", "20250101", "20250601")
             assert result == "stock_data_result"
-            mock_module.get_stock_data.assert_called_once_with(
-                "000001", "20250101", "20250601"
-            )
+            mock_module.get_stock_data.assert_called_once_with("000001", "20250101", "20250601")
 
     def test_kwargs_forwarded(self):
         """关键字参数被正确转发。"""
@@ -117,6 +119,7 @@ class TestRouteToVendorDispatch:
 # ────────────────────────────────────────────────────────────────
 #  route_to_vendor — vendor fallback
 # ────────────────────────────────────────────────────────────────
+
 
 class TestVendorFallback:
     """Tests for vendor fallback logic."""
@@ -145,6 +148,7 @@ class TestVendorFallback:
 
     def test_all_vendors_fail_returns_error(self):
         """所有 vendor 都失败时返回错误字符串。"""
+
         def mock_import(vendor):
             mod = MagicMock()
             # Make all functions raise
@@ -160,6 +164,7 @@ class TestVendorFallback:
 
     def test_module_import_failure_falls_back(self):
         """vendor 模块导入失败时回退。"""
+
         def mock_import(vendor):
             if vendor == "eastmoney":
                 return None  # Import failed
@@ -178,6 +183,7 @@ class TestVendorFallback:
 # ────────────────────────────────────────────────────────────────
 #  route_to_vendor — config preferred vendor
 # ────────────────────────────────────────────────────────────────
+
 
 class TestPreferredVendor:
     """Tests for preferred vendor from config."""
@@ -215,6 +221,7 @@ class TestPreferredVendor:
 #  _import_vendor_module
 # ────────────────────────────────────────────────────────────────
 
+
 class TestImportVendorModule:
     """Tests for _import_vendor_module()."""
 
@@ -246,6 +253,7 @@ class TestImportVendorModule:
 #  list_available_methods
 # ────────────────────────────────────────────────────────────────
 
+
 class TestListAvailableMethods:
     """Tests for list_available_methods()."""
 
@@ -270,6 +278,7 @@ class TestListAvailableMethods:
 # ────────────────────────────────────────────────────────────────
 #  Config integration
 # ────────────────────────────────────────────────────────────────
+
 
 class TestConfigIntegration:
     """Tests for dataflows config get/set."""

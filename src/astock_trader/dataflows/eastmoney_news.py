@@ -8,7 +8,7 @@ try/except — on failure a descriptive error string is returned.
 from __future__ import annotations
 
 import traceback
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Annotated
 
 import pandas as pd
@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _ensure_akshare() -> str | None:
     if ak is None:
@@ -65,6 +66,7 @@ def _df_to_markdown(df: pd.DataFrame, max_rows: int = 30) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def get_news(
     symbol: Annotated[str, "A-share stock symbol, e.g. '000001'"],
@@ -230,8 +232,7 @@ def get_insider_transactions(
     df = df.rename(columns=col_map)
 
     # Keep useful columns
-    preferred = ["date", "price", "close_price", "premium_rate", "discount_rate",
-                 "volume", "amount", "buyer", "seller"]
+    preferred = ["date", "price", "close_price", "premium_rate", "discount_rate", "volume", "amount", "buyer", "seller"]
     keep = [c for c in preferred if c in df.columns]
     if keep:
         df = df[keep]
@@ -242,9 +243,7 @@ def get_insider_transactions(
             df[c] = df[c].apply(lambda x: _fmt_number(x, 2))
     for c in ["premium_rate", "discount_rate"]:
         if c in df.columns:
-            df[c] = df[c].apply(
-                lambda x: f"{float(x):.2f}%" if pd.notna(x) else "N/A"
-            )
+            df[c] = df[c].apply(lambda x: f"{float(x):.2f}%" if pd.notna(x) else "N/A")
 
     header = f"## Block Trades (大宗交易) — {symbol}\n\n"
     return header + _df_to_markdown(df, max_rows=30)

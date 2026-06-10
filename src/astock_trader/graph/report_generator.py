@@ -12,7 +12,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,21 +21,57 @@ logger = logging.getLogger(__name__)
 # ────────────────────────────────────────────────────────────────
 
 STAGE_DEFS = [
-    {"id": "market",       "num": "1",  "name": "市场分析师", "desc": "股价走势 / 估值 / 资金流向 / 技术面",        "field": "market_report"},
-    {"id": "sentiment",    "num": "2",  "name": "情绪分析师", "desc": "重大事件 / 融资融券 / 股东动向 / 机构观点",  "field": "sentiment_report"},
-    {"id": "news",         "num": "3",  "name": "新闻分析师", "desc": "最新动态 / 机构研报 / 行业对比 / 宏观环境",  "field": "news_report"},
-    {"id": "fundamentals", "num": "4",  "name": "基本面分析师", "desc": "盈利能力 / 成长性 / 资产负债 / 现金流 / 分红", "field": "fundamentals_report"},
-    {"id": "debate",       "num": "5",  "name": "多空辩论",   "desc": "多头 vs 空头 → 辩论裁判裁决",              "field": None},
-    {"id": "research",     "num": "6",  "name": "研究主管",   "desc": "综合各分析师报告，形成投资方案",             "field": "investment_plan"},
-    {"id": "trader",       "num": "7",  "name": "交易员",     "desc": "制定具体可执行的交易计划",                 "field": "trader_investment_plan"},
-    {"id": "risk",         "num": "8",  "name": "风控辩论",   "desc": "风险评估辩论 → 风控裁判裁决",              "field": None},
-    {"id": "final",        "num": "9",  "name": "组合经理",   "desc": "最终投资决策",                             "field": "final_trade_decision"},
-    {"id": "summary",      "num": "10", "name": "报告总结",   "desc": "综合全部智能体产出，生成一页执行摘要",      "field": None},
+    {
+        "id": "market",
+        "num": "1",
+        "name": "市场分析师",
+        "desc": "股价走势 / 估值 / 资金流向 / 技术面",
+        "field": "market_report",
+    },
+    {
+        "id": "sentiment",
+        "num": "2",
+        "name": "情绪分析师",
+        "desc": "重大事件 / 融资融券 / 股东动向 / 机构观点",
+        "field": "sentiment_report",
+    },
+    {
+        "id": "news",
+        "num": "3",
+        "name": "新闻分析师",
+        "desc": "最新动态 / 机构研报 / 行业对比 / 宏观环境",
+        "field": "news_report",
+    },
+    {
+        "id": "fundamentals",
+        "num": "4",
+        "name": "基本面分析师",
+        "desc": "盈利能力 / 成长性 / 资产负债 / 现金流 / 分红",
+        "field": "fundamentals_report",
+    },
+    {"id": "debate", "num": "5", "name": "多空辩论", "desc": "多头 vs 空头 → 辩论裁判裁决", "field": None},
+    {
+        "id": "research",
+        "num": "6",
+        "name": "研究主管",
+        "desc": "综合各分析师报告，形成投资方案",
+        "field": "investment_plan",
+    },
+    {
+        "id": "trader",
+        "num": "7",
+        "name": "交易员",
+        "desc": "制定具体可执行的交易计划",
+        "field": "trader_investment_plan",
+    },
+    {"id": "risk", "num": "8", "name": "风控辩论", "desc": "风险评估辩论 → 风控裁判裁决", "field": None},
+    {"id": "final", "num": "9", "name": "组合经理", "desc": "最终投资决策", "field": "final_trade_decision"},
+    {"id": "summary", "num": "10", "name": "报告总结", "desc": "综合全部智能体产出，生成一页执行摘要", "field": None},
 ]
 
 
 def generate_report(
-    state: Dict[str, Any],
+    state: dict[str, Any],
     output_dir: str,
     rating: str = "",
     elapsed_seconds: float = 0,
@@ -67,13 +103,15 @@ def generate_report(
         content = _extract_content(state, defn)
         if not content and defn["id"] != "summary":
             continue
-        stages.append({
-            "id": defn["id"],
-            "num": defn["num"],
-            "name": defn["name"],
-            "desc": defn["desc"],
-            "content": content,
-        })
+        stages.append(
+            {
+                "id": defn["id"],
+                "num": defn["num"],
+                "name": defn["name"],
+                "desc": defn["desc"],
+                "content": content,
+            }
+        )
 
     # ── Build summary stage (always generated) ───────────────
     summary_text = _build_summary(state, company, trade_date, rating, elapsed_seconds)
@@ -86,13 +124,15 @@ def generate_report(
             break
     if not summary_found:
         summary_def = STAGE_DEFS[-1]
-        stages.append({
-            "id": "summary",
-            "num": summary_def["num"],
-            "name": summary_def["name"],
-            "desc": summary_def["desc"],
-            "content": summary_text,
-        })
+        stages.append(
+            {
+                "id": "summary",
+                "num": summary_def["num"],
+                "name": summary_def["name"],
+                "desc": summary_def["desc"],
+                "content": summary_text,
+            }
+        )
 
     # ── Assemble data object ─────────────────────────────────
     report_data = {
@@ -122,7 +162,8 @@ def generate_report(
 #  Internal helpers
 # ────────────────────────────────────────────────────────────────
 
-def _extract_content(state: Dict[str, Any], defn: dict) -> str:
+
+def _extract_content(state: dict[str, Any], defn: dict) -> str:
     """Extract the text content for a stage from the state."""
     sid = defn["id"]
     field = defn["field"]
@@ -146,7 +187,7 @@ def _extract_content(state: Dict[str, Any], defn: dict) -> str:
 
 
 def _build_summary(
-    state: Dict[str, Any],
+    state: dict[str, Any],
     company: str,
     trade_date: str,
     rating: str,
@@ -154,9 +195,7 @@ def _build_summary(
 ) -> str:
     """Build a one-page executive summary from the pipeline state."""
     n_stages = len(STAGE_DEFS)
-    total_chars = sum(
-        len(state.get(d["field"], "")) for d in STAGE_DEFS if d["field"]
-    )
+    total_chars = sum(len(state.get(d["field"], "")) for d in STAGE_DEFS if d["field"])
     debate = state.get("investment_debate_state") or {}
     risk = state.get("risk_debate_state") or {}
     total_chars += len(debate.get("judge_decision", ""))
@@ -253,7 +292,7 @@ def _excerpt_from_text(text: str, n: int = 120) -> str:
 #  HTML Template (single-file, uses marked.js from CDN)
 # ════════════════════════════════════════════════════════════════
 
-_HTML_TEMPLATE = r'''<!DOCTYPE html>
+_HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -424,4 +463,4 @@ marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false });
 init();
 </script>
 </body>
-</html>'''
+</html>"""

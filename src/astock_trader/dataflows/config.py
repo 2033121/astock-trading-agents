@@ -4,12 +4,12 @@ Provides a simple, module-level config dictionary that can be set
 from the application entry point and read by any data provider module.
 """
 
-from typing import Any, Dict
+from typing import Any
 
-_config: Dict[str, Any] = {}
+_config: dict[str, Any] = {}
 
 
-def set_config(config: Dict[str, Any] | None) -> None:
+def set_config(config: dict[str, Any] | None) -> None:
     """Set the global configuration dictionary.
 
     Args:
@@ -19,6 +19,6 @@ def set_config(config: Dict[str, Any] | None) -> None:
     _config = config or {}
 
 
-def get_config() -> Dict[str, Any]:
+def get_config() -> dict[str, Any]:
     """Return the current global configuration dictionary."""
     return _config

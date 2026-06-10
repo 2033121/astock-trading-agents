@@ -10,10 +10,9 @@ API 认证：环境变量 MX_APIKEY，通过 HTTP Header ``apikey`` 传递。
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from typing import Annotated, Any
+from typing import Annotated
 
 import requests
 
@@ -43,6 +42,7 @@ def _headers() -> dict[str, str]:
 
 def _safe_call(func):
     """统一错误包装装饰器。"""
+
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
@@ -54,6 +54,7 @@ def _safe_call(func):
             return "[ERROR] 妙想 API 连接失败，请检查网络"
         except Exception as exc:
             return f"[ERROR] 妙想 API 调用异常: {exc}"
+
     wrapper.__name__ = func.__name__
     wrapper.__doc__ = func.__doc__
     return wrapper
@@ -95,7 +96,7 @@ def _parse_data_tables(result: dict) -> str:
     parts = []
     for i, tbl in enumerate(tables):
         code = tbl.get("code", "")
-        entity = tbl.get("entityName", code or f"数据表 {i+1}")
+        entity = tbl.get("entityName", code or f"数据表 {i + 1}")
 
         # --- 列名映射：优先 nameMap，其次 columnMetaList ---
         name_map: dict[str, str] = tbl.get("nameMap", {}) or {}
@@ -132,11 +133,7 @@ def _parse_data_tables(result: dict) -> str:
             return cid
 
         headers = [_display_name(cid) for cid in col_ids]
-        max_rows = (
-            max(len(v) if isinstance(v, list) else 1 for v in data_table.values())
-            if data_table
-            else 0
-        )
+        max_rows = max(len(v) if isinstance(v, list) else 1 for v in data_table.values()) if data_table else 0
 
         lines = [f"### {entity}", ""]
         lines.append("| " + " | ".join(headers) + " |")
@@ -188,7 +185,7 @@ def _parse_search_results(result: dict) -> str:
             meta.append(f"评级: {rating}")
 
         meta_str = " | ".join(meta) if meta else ""
-        parts.append(f"**{i+1}. {title}**")
+        parts.append(f"**{i + 1}. {title}**")
         if meta_str:
             parts.append(f"   {meta_str}")
         if content:
@@ -203,6 +200,7 @@ def _parse_search_results(result: dict) -> str:
 # ---------------------------------------------------------------------------
 # 公开数据函数 — 与 akshare_data.py 接口对齐
 # ---------------------------------------------------------------------------
+
 
 @_safe_call
 def get_fundamentals(
@@ -223,9 +221,9 @@ def get_fundamentals(
         code = result.get("code", "")
         msg = result.get("message", "未知错误")
         if code == 113:
-            return f"[ERROR] 妙想 API 调用次数已达上限。"
+            return "[ERROR] 妙想 API 调用次数已达上限。"
         if code == 114:
-            return f"[ERROR] 妙想 API Key 已失效，请检查 MX_APIKEY。"
+            return "[ERROR] 妙想 API Key 已失效，请检查 MX_APIKEY。"
         return f"[ERROR] 妙想 API 返回错误 (status={status}, code={code}): {msg}"
     return f"# {symbol} 基本面数据（妙想）\n\n{_parse_data_tables(result)}"
 

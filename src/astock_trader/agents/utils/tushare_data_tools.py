@@ -3,8 +3,9 @@
 这些工具通过 route_to_vendor 路由，提供 Tushare 独有的结构化数据能力。
 """
 
-from langchain_core.tools import tool
 from typing import Annotated
+
+from langchain_core.tools import tool
 
 from astock_trader.dataflows.interface import route_to_vendor
 

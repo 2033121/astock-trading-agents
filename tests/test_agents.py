@@ -1,15 +1,14 @@
 """Tests for agent factory functions — verify factories return callables."""
 
 import functools
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from langchain_core.messages import AIMessage
-
 
 # ────────────────────────────────────────────────────────────────
 #  Mock LLM helpers
 # ────────────────────────────────────────────────────────────────
+
 
 def make_mock_llm():
     """Create a mock LLM with all necessary methods for agent factories.
@@ -45,12 +44,14 @@ def make_mock_llm():
 #  Analyst factories
 # ────────────────────────────────────────────────────────────────
 
+
 class TestCreateMarketAnalyst:
     """Tests for create_market_analyst()."""
 
     def test_returns_callable(self):
         """create_market_analyst 返回可调用对象。"""
         from astock_trader.agents.analysts.market_analyst import create_market_analyst
+
         llm = make_mock_llm()
         node = create_market_analyst(llm)
         assert callable(node)
@@ -58,12 +59,12 @@ class TestCreateMarketAnalyst:
     def test_node_accepts_state(self):
         """返回的节点函数接受 state 字典。"""
         from astock_trader.agents.analysts.market_analyst import create_market_analyst
+
         llm = make_mock_llm()
         node = create_market_analyst(llm)
 
         # The chain (prompt | bound_llm) will be invoked
         # Mock the chain's invoke to return an AIMessage
-        state = {"messages": [("human", "分析 000001")]}
         # Since the chain invokes prompt | llm, and we mocked llm,
         # the result depends on the chain. We just check the node is callable.
         assert callable(node)
@@ -75,6 +76,7 @@ class TestCreateNewsAnalyst:
     def test_returns_callable(self):
         """create_news_analyst 返回可调用对象。"""
         from astock_trader.agents.analysts.news_analyst import create_news_analyst
+
         llm = make_mock_llm()
         node = create_news_analyst(llm)
         assert callable(node)
@@ -86,6 +88,7 @@ class TestCreateSocialMediaAnalyst:
     def test_returns_callable(self):
         """create_social_media_analyst 返回可调用对象。"""
         from astock_trader.agents.analysts.social_media_analyst import create_social_media_analyst
+
         llm = make_mock_llm()
         node = create_social_media_analyst(llm)
         assert callable(node)
@@ -97,6 +100,7 @@ class TestCreateFundamentalsAnalyst:
     def test_returns_callable(self):
         """create_fundamentals_analyst 返回可调用对象。"""
         from astock_trader.agents.analysts.fundamentals_analyst import create_fundamentals_analyst
+
         llm = make_mock_llm()
         node = create_fundamentals_analyst(llm)
         assert callable(node)
@@ -106,12 +110,14 @@ class TestCreateFundamentalsAnalyst:
 #  Researcher factories
 # ────────────────────────────────────────────────────────────────
 
+
 class TestCreateBullResearcher:
     """Tests for create_bull_researcher()."""
 
     def test_returns_callable(self):
         """create_bull_researcher 返回可调用对象。"""
         from astock_trader.agents.researchers.bull_researcher import create_bull_researcher
+
         llm = make_mock_llm()
         node = create_bull_researcher(llm)
         assert callable(node)
@@ -119,6 +125,7 @@ class TestCreateBullResearcher:
     def test_node_returns_debate_state_update(self):
         """节点函数返回包含 investment_debate_state 的字典。"""
         from astock_trader.agents.researchers.bull_researcher import create_bull_researcher
+
         llm = make_mock_llm()
         llm.invoke.return_value = MagicMock(content="看多：技术面强势")
 
@@ -145,6 +152,7 @@ class TestCreateBearResearcher:
     def test_returns_callable(self):
         """create_bear_researcher 返回可调用对象。"""
         from astock_trader.agents.researchers.bear_researcher import create_bear_researcher
+
         llm = make_mock_llm()
         node = create_bear_researcher(llm)
         assert callable(node)
@@ -154,12 +162,14 @@ class TestCreateBearResearcher:
 #  Manager factories
 # ────────────────────────────────────────────────────────────────
 
+
 class TestCreateResearchManager:
     """Tests for create_research_manager()."""
 
     def test_returns_callable(self):
         """create_research_manager 返回可调用对象。"""
         from astock_trader.agents.managers.research_manager import create_research_manager
+
         llm = make_mock_llm()
         node = create_research_manager(llm)
         assert callable(node)
@@ -167,6 +177,7 @@ class TestCreateResearchManager:
     def test_accepts_deep_think_llm(self):
         """create_research_manager 接受 deep_think_llm 参数。"""
         from astock_trader.agents.managers.research_manager import create_research_manager
+
         llm = make_mock_llm()
         deep_llm = make_mock_llm()
         node = create_research_manager(llm, deep_think_llm=deep_llm)
@@ -179,6 +190,7 @@ class TestCreatePortfolioManager:
     def test_returns_callable(self):
         """create_portfolio_manager 返回可调用对象。"""
         from astock_trader.agents.managers.portfolio_manager import create_portfolio_manager
+
         llm = make_mock_llm()
         node = create_portfolio_manager(llm)
         assert callable(node)
@@ -188,12 +200,14 @@ class TestCreatePortfolioManager:
 #  Trader factories
 # ────────────────────────────────────────────────────────────────
 
+
 class TestCreateTrader:
     """Tests for create_trader()."""
 
     def test_returns_callable(self):
         """create_trader 返回可调用对象。"""
         from astock_trader.agents.trader.trader import create_trader
+
         llm = make_mock_llm()
         node = create_trader(llm)
         assert callable(node)
@@ -201,6 +215,7 @@ class TestCreateTrader:
     def test_trader_with_functools_partial(self):
         """create_trader 可通过 functools.partial 绑定 company_name。"""
         from astock_trader.agents.trader.trader import create_trader
+
         llm = make_mock_llm()
         trader_fn = create_trader(llm)
         trader_node = functools.partial(trader_fn, company_name="贵州茅台")
@@ -211,6 +226,7 @@ class TestCreateTrader:
     def test_create_trader_for_company(self):
         """create_trader_for_company 返回绑定的节点函数。"""
         from astock_trader.agents.trader.trader import create_trader_for_company
+
         llm = make_mock_llm()
         node = create_trader_for_company(llm, "贵州茅台")
         assert callable(node)
@@ -220,12 +236,14 @@ class TestCreateTrader:
 #  Risk management factories
 # ────────────────────────────────────────────────────────────────
 
+
 class TestCreateAggressiveDebator:
     """Tests for create_aggressive_debator()."""
 
     def test_returns_callable(self):
         """create_aggressive_debator 返回可调用对象。"""
         from astock_trader.agents.risk_mgmt.aggressive_debator import create_aggressive_debator
+
         llm = make_mock_llm()
         node = create_aggressive_debator(llm)
         assert callable(node)
@@ -233,6 +251,7 @@ class TestCreateAggressiveDebator:
     def test_node_returns_risk_state_update(self):
         """节点函数返回包含 risk_debate_state 的字典。"""
         from astock_trader.agents.risk_mgmt.aggressive_debator import create_aggressive_debator
+
         llm = make_mock_llm()
         llm.invoke.return_value = MagicMock(content="激进观点：风险可控")
 
@@ -259,6 +278,7 @@ class TestCreateConservativeDebator:
     def test_returns_callable(self):
         """create_conservative_debator 返回可调用对象。"""
         from astock_trader.agents.risk_mgmt.conservative_debator import create_conservative_debator
+
         llm = make_mock_llm()
         node = create_conservative_debator(llm)
         assert callable(node)
@@ -270,6 +290,7 @@ class TestCreateNeutralDebator:
     def test_returns_callable(self):
         """create_neutral_debator 返回可调用对象。"""
         from astock_trader.agents.risk_mgmt.neutral_debator import create_neutral_debator
+
         llm = make_mock_llm()
         node = create_neutral_debator(llm)
         assert callable(node)
@@ -279,49 +300,63 @@ class TestCreateNeutralDebator:
 #  Top-level __init__ imports
 # ────────────────────────────────────────────────────────────────
 
+
 class TestTopLevelImports:
     """Verify all factories are importable from the agents package."""
 
     def test_import_all_analysts(self):
         """所有分析师工厂函数均可从顶层导入。"""
         from astock_trader.agents import (
+            create_fundamentals_analyst,
             create_market_analyst,
             create_news_analyst,
             create_social_media_analyst,
-            create_fundamentals_analyst,
         )
-        assert all(callable(f) for f in [
-            create_market_analyst,
-            create_news_analyst,
-            create_social_media_analyst,
-            create_fundamentals_analyst,
-        ])
+
+        assert all(
+            callable(f)
+            for f in [
+                create_market_analyst,
+                create_news_analyst,
+                create_social_media_analyst,
+                create_fundamentals_analyst,
+            ]
+        )
 
     def test_import_all_researchers(self):
         """所有研究员工厂函数均可从顶层导入。"""
         from astock_trader.agents import (
-            create_bull_researcher,
             create_bear_researcher,
+            create_bull_researcher,
         )
-        assert all(callable(f) for f in [
-            create_bull_researcher,
-            create_bear_researcher,
-        ])
+
+        assert all(
+            callable(f)
+            for f in [
+                create_bull_researcher,
+                create_bear_researcher,
+            ]
+        )
 
     def test_import_all_managers(self):
         """所有经理工厂函数均可从顶层导入。"""
         from astock_trader.agents import (
-            create_research_manager,
             create_portfolio_manager,
+            create_research_manager,
         )
-        assert all(callable(f) for f in [
-            create_research_manager,
-            create_portfolio_manager,
-        ])
+
+        assert all(
+            callable(f)
+            for f in [
+                create_research_manager,
+                create_portfolio_manager,
+            ]
+        )
 
     def test_import_trader(self):
         """交易员工厂函数可从顶层导入。"""
         from astock_trader.agents import create_trader, create_trader_for_company
+
         assert callable(create_trader)
         assert callable(create_trader_for_company)
 
@@ -332,19 +367,20 @@ class TestTopLevelImports:
             create_conservative_debator,
             create_neutral_debator,
         )
-        assert all(callable(f) for f in [
-            create_aggressive_debator,
-            create_conservative_debator,
-            create_neutral_debator,
-        ])
+
+        assert all(
+            callable(f)
+            for f in [
+                create_aggressive_debator,
+                create_conservative_debator,
+                create_neutral_debator,
+            ]
+        )
 
     def test_import_schemas(self):
         """Pydantic schema 可从顶层导入。"""
         from astock_trader.agents import (
-            PortfolioDecision,
             PortfolioRating,
-            ResearchPlan,
-            TraderAction,
-            TraderProposal,
         )
+
         assert PortfolioRating.BUY.value == "买入"

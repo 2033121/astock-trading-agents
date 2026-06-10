@@ -1,14 +1,15 @@
 """Tests for astock_trader.graph.conditional_logic — flow control routing."""
 
-import pytest
 from unittest.mock import MagicMock
 
-from astock_trader.graph.conditional_logic import ConditionalLogic
+import pytest
 
+from astock_trader.graph.conditional_logic import ConditionalLogic
 
 # ────────────────────────────────────────────────────────────────
 #  Fixtures
 # ────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def logic():
@@ -38,6 +39,7 @@ def _make_message_without_tool_calls():
 # ────────────────────────────────────────────────────────────────
 #  Analyst tool-loop routing
 # ────────────────────────────────────────────────────────────────
+
 
 class TestShouldContinueMarket:
     """Tests for should_continue_market()."""
@@ -111,6 +113,7 @@ class TestShouldContinueFundamentals:
 # ────────────────────────────────────────────────────────────────
 #  Investment debate routing
 # ────────────────────────────────────────────────────────────────
+
 
 class TestShouldContinueDebate:
     """Tests for should_continue_debate()."""
@@ -189,6 +192,7 @@ class TestShouldContinueDebate:
 # ────────────────────────────────────────────────────────────────
 #  Risk analysis routing
 # ────────────────────────────────────────────────────────────────
+
 
 class TestShouldContinueRiskAnalysis:
     """Tests for should_continue_risk_analysis()."""

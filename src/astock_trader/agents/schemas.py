@@ -7,14 +7,13 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
-
 
 # ────────────────────────────────────────────────────────────
 #  枚举定义
 # ────────────────────────────────────────────────────────────
+
 
 class PortfolioRating(str, Enum):
     """投资组合评级（中文枚举值）。"""
@@ -38,6 +37,7 @@ class TraderAction(str, Enum):
 #  结构化模型
 # ────────────────────────────────────────────────────────────
 
+
 class ResearchPlan(BaseModel):
     """研究员投资方案（辩论后产出）。"""
 
@@ -51,9 +51,9 @@ class TraderProposal(BaseModel):
 
     action: TraderAction = Field(description="交易动作")
     reasoning: str = Field(description="交易理由")
-    entry_price: Optional[float] = Field(description="建议入场价", default=None)
-    stop_loss: Optional[float] = Field(description="止损价", default=None)
-    position_sizing: Optional[str] = Field(description="仓位建议", default=None)
+    entry_price: float | None = Field(description="建议入场价", default=None)
+    stop_loss: float | None = Field(description="止损价", default=None)
+    position_sizing: str | None = Field(description="仓位建议", default=None)
 
 
 class PortfolioDecision(BaseModel):
@@ -62,13 +62,14 @@ class PortfolioDecision(BaseModel):
     rating: PortfolioRating = Field(description="最终评级")
     executive_summary: str = Field(description="执行摘要")
     investment_thesis: str = Field(description="投资逻辑")
-    price_target: Optional[float] = Field(description="目标价", default=None)
-    time_horizon: Optional[str] = Field(description="持有周期", default=None)
+    price_target: float | None = Field(description="目标价", default=None)
+    time_horizon: str | None = Field(description="持有周期", default=None)
 
 
 # ────────────────────────────────────────────────────────────
 #  渲染函数 — 将模型实例转换为中文 Markdown
 # ────────────────────────────────────────────────────────────
+
 
 def render_research_plan(plan: ResearchPlan) -> str:
     """将研究员方案渲染为中文 Markdown。"""

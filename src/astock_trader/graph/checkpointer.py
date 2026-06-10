@@ -11,14 +11,12 @@ import logging
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Default directory for checkpoint databases
-_DEFAULT_CHECKPOINT_DIR = os.path.join(
-    os.path.expanduser("~"), ".astock_trader", "checkpoints"
-)
+_DEFAULT_CHECKPOINT_DIR = os.path.join(os.path.expanduser("~"), ".astock_trader", "checkpoints")
 
 
 def _ensure_dir(directory: str) -> None:
@@ -30,9 +28,10 @@ def _ensure_dir(directory: str) -> None:
 #  Public API
 # ────────────────────────────────────────────────────────────────
 
+
 def get_checkpointer(
     ticker: str,
-    checkpoint_dir: Optional[str] = None,
+    checkpoint_dir: str | None = None,
 ) -> Any:
     """Return a ``SqliteSaver`` checkpointer for the given ticker.
 
@@ -63,7 +62,7 @@ def get_checkpointer(
 
 def has_checkpoint(
     ticker: str,
-    checkpoint_dir: Optional[str] = None,
+    checkpoint_dir: str | None = None,
 ) -> bool:
     """Check whether a checkpoint database exists and contains data.
 
@@ -87,9 +86,7 @@ def has_checkpoint(
 
     try:
         conn = sqlite3.connect(db_path)
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = cursor.fetchall()
         conn.close()
         return len(tables) > 0
@@ -99,7 +96,7 @@ def has_checkpoint(
 
 def checkpoint_step(
     ticker: str,
-    checkpoint_dir: Optional[str] = None,
+    checkpoint_dir: str | None = None,
 ) -> int:
     """Return the number of checkpointed super-steps for a ticker.
 
@@ -123,10 +120,7 @@ def checkpoint_step(
 
     try:
         conn = sqlite3.connect(db_path)
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='checkpoints'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'")
         if cursor.fetchone() is None:
             conn.close()
             return 0
@@ -140,7 +134,7 @@ def checkpoint_step(
 
 def clear_checkpoint(
     ticker: str,
-    checkpoint_dir: Optional[str] = None,
+    checkpoint_dir: str | None = None,
 ) -> bool:
     """Delete the checkpoint database for a ticker.
 

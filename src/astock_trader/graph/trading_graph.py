@@ -19,16 +19,15 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from astock_trader.agents.utils.memory import TradingMemoryLog
 from astock_trader.default_config import DEFAULT_CONFIG
 from astock_trader.graph.checkpointer import (
-    clear_checkpoint,
     get_checkpointer,
-    has_checkpoint,
     thread_id,
 )
 from astock_trader.graph.conditional_logic import ConditionalLogic
@@ -59,15 +58,13 @@ class TradingAgentsGraph:
 
     def __init__(
         self,
-        selected_analysts: Optional[List[str]] = None,
+        selected_analysts: list[str] | None = None,
         debug: bool = False,
-        config: Optional[Dict[str, Any]] = None,
-        callbacks: Optional[List[Callable]] = None,
+        config: dict[str, Any] | None = None,
+        callbacks: list[Callable] | None = None,
     ) -> None:
         self.config = {**DEFAULT_CONFIG, **(config or {})}
-        self.selected_analysts = selected_analysts or [
-            "market", "social", "news", "fundamentals"
-        ]
+        self.selected_analysts = selected_analysts or ["market", "social", "news", "fundamentals"]
         self.debug = debug
         self.callbacks = callbacks or []
 
@@ -115,7 +112,7 @@ class TradingAgentsGraph:
         self,
         company_name: str,
         trade_date: str,
-    ) -> Tuple[Dict[str, Any], str]:
+    ) -> tuple[dict[str, Any], str]:
         """Run the full analysis pipeline for a stock on a given date.
 
         This is the main entry point.  It:
@@ -140,10 +137,13 @@ class TradingAgentsGraph:
             ``AgentState`` after graph execution and *rating* is the
             extracted Chinese rating string.
         """
-        self._emit("propagate_start", {
-            "company": company_name,
-            "date": trade_date,
-        })
+        self._emit(
+            "propagate_start",
+            {
+                "company": company_name,
+                "date": trade_date,
+            },
+        )
 
         # Resolve pending memory entries
         self._resolve_pending_memory(company_name)
@@ -151,11 +151,14 @@ class TradingAgentsGraph:
         # Run the graph
         final_state, rating = self._run_graph(company_name, trade_date)
 
-        self._emit("propagate_complete", {
-            "company": company_name,
-            "date": trade_date,
-            "rating": rating,
-        })
+        self._emit(
+            "propagate_complete",
+            {
+                "company": company_name,
+                "date": trade_date,
+                "rating": rating,
+            },
+        )
 
         return final_state, rating
 
@@ -167,7 +170,7 @@ class TradingAgentsGraph:
         self,
         company_name: str,
         trade_date: str,
-    ) -> Tuple[Dict[str, Any], str]:
+    ) -> tuple[dict[str, Any], str]:
         """Execute the LangGraph and handle post-processing."""
         import time
 
@@ -184,7 +187,7 @@ class TradingAgentsGraph:
         # ── Checkpointer (optional) ──────────────────────────
         checkpoint_enabled = self.config.get("checkpoint_enabled", False)
         checkpointer = None
-        thread_config: Dict[str, Any] = {}
+        thread_config: dict[str, Any] = {}
 
         if checkpoint_enabled:
             try:
@@ -198,11 +201,14 @@ class TradingAgentsGraph:
         # ── Invoke ────────────────────────────────────────────
         graph_args = self.propagator.get_graph_args()
 
-        self._emit("graph_invoke_start", {
-            "company": company_name,
-            "date": trade_date,
-            "recursion_limit": graph_args.get("recursion_limit"),
-        })
+        self._emit(
+            "graph_invoke_start",
+            {
+                "company": company_name,
+                "date": trade_date,
+                "recursion_limit": graph_args.get("recursion_limit"),
+            },
+        )
 
         t0 = time.time()
         try:
@@ -224,11 +230,14 @@ class TradingAgentsGraph:
             raise
         elapsed = time.time() - t0
 
-        self._emit("graph_invoke_complete", {
-            "company": company_name,
-            "date": trade_date,
-            "elapsed": round(elapsed, 1),
-        })
+        self._emit(
+            "graph_invoke_complete",
+            {
+                "company": company_name,
+                "date": trade_date,
+                "elapsed": round(elapsed, 1),
+            },
+        )
 
         # ── Patch report with actual elapsed time ─────────────
         report_path = final_state.get("report_path", "")
@@ -256,7 +265,7 @@ class TradingAgentsGraph:
     #  Internal: LLM creation
     # ════════════════════════════════════════════════════════════
 
-    def _create_llms(self) -> Tuple[Any, Any]:
+    def _create_llms(self) -> tuple[Any, Any]:
         """Create deep-thinking and quick-thinking LLM instances."""
         from astock_trader.llm_clients.factory import create_llm_client
 
@@ -297,7 +306,9 @@ class TradingAgentsGraph:
 
         logger.info(
             "LLMs created: deep=%s, quick=%s (provider=%s)",
-            deep_model, quick_model, provider,
+            deep_model,
+            quick_model,
+            provider,
         )
         return deep_llm, quick_llm
 
@@ -307,7 +318,7 @@ class TradingAgentsGraph:
 
     def _log_state_to_disk(
         self,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         company_name: str,
         trade_date: str,
     ) -> None:
@@ -335,7 +346,7 @@ class TradingAgentsGraph:
         self,
         company_name: str,
         trade_date: str,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         rating: str,
     ) -> None:
         """Store the decision in the trading memory log."""
@@ -381,7 +392,7 @@ class TradingAgentsGraph:
     @staticmethod
     def _patch_report_elapsed(filepath: str, elapsed: float) -> None:
         """Patch the HTML report file with the actual elapsed time."""
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             html = f.read()
         # Replace the placeholder elapsed value (0) in the embedded JSON
         html = html.replace(
@@ -394,7 +405,7 @@ class TradingAgentsGraph:
         logger.debug("Patched report elapsed: %.1fs in %s", elapsed, filepath)
 
     @staticmethod
-    def _extract_action(state: Dict[str, Any]) -> str:
+    def _extract_action(state: dict[str, Any]) -> str:
         """Try to extract the trade action from the trader's plan."""
         plan = state.get("trader_investment_plan", "")
         for action in ("买入", "增持", "持有", "减持", "卖出"):
@@ -423,7 +434,7 @@ class TradingAgentsGraph:
         except (TypeError, ValueError):
             return str(obj)
 
-    def _emit(self, event: str, data: Dict[str, Any]) -> None:
+    def _emit(self, event: str, data: dict[str, Any]) -> None:
         """Fire all registered callbacks with the given event."""
         for cb in self.callbacks:
             try:

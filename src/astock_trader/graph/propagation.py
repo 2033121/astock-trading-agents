@@ -7,7 +7,7 @@ The :class:`Propagator` is responsible for:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class Propagator:
@@ -32,7 +32,7 @@ class Propagator:
         company_name: str,
         trade_date: str,
         past_context: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build a zero-value initial state for the trading graph.
 
         Parameters
@@ -98,7 +98,7 @@ class Propagator:
     #  Graph invocation args
     # ────────────────────────────────────────────────────────────
 
-    def get_graph_args(self) -> Dict[str, Any]:
+    def get_graph_args(self) -> dict[str, Any]:
         """Return keyword arguments for ``compiled_graph.invoke()``.
 
         Returns

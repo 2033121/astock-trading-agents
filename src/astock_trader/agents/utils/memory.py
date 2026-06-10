@@ -17,9 +17,8 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +43,8 @@ class TradingMemoryLog:
 
     def __init__(
         self,
-        memory_dir: Optional[str] = None,
-        memory_file: Optional[str] = None,
+        memory_dir: str | None = None,
+        memory_file: str | None = None,
     ) -> None:
         self._dir = memory_dir or _DEFAULT_MEMORY_DIR
         self._file = memory_file or _DEFAULT_MEMORY_FILE
@@ -237,7 +236,7 @@ class TradingMemoryLog:
 
         return entries
 
-    def _parse_entry(self, text: str) -> Optional[dict[str, Any]]:
+    def _parse_entry(self, text: str) -> dict[str, Any] | None:
         """解析单个条目文本为字典。"""
         header_match = _HEADER_PATTERN.search(text)
         if not header_match:
@@ -263,7 +262,7 @@ class TradingMemoryLog:
                 decision = {"raw": decision_match.group(1).strip()}
 
         # 提取 REFLECTION 块
-        reflection: Optional[dict[str, Any]] = None
+        reflection: dict[str, Any] | None = None
         reflection_match = re.search(
             r"REFLECTION\s*\n(.*?)(?=\n\s*" + re.escape(_ENTRY_SEPARATOR) + r"|\Z)",
             text,
@@ -305,7 +304,7 @@ class TradingMemoryLog:
         rating: str,
         pending: bool,
         decision: dict[str, Any],
-        reflection: Optional[dict[str, Any]],
+        reflection: dict[str, Any] | None,
     ) -> str:
         """格式化一个条目为文本。"""
         pending_str = "pending" if pending else "resolved"
@@ -316,11 +315,13 @@ class TradingMemoryLog:
             json.dumps(decision, ensure_ascii=False, indent=2),
         ]
         if reflection is not None:
-            lines.extend([
-                "",
-                "REFLECTION",
-                json.dumps(reflection, ensure_ascii=False, indent=2),
-            ])
+            lines.extend(
+                [
+                    "",
+                    "REFLECTION",
+                    json.dumps(reflection, ensure_ascii=False, indent=2),
+                ]
+            )
         lines.extend(["", _ENTRY_SEPARATOR, ""])
         return "\n".join(lines)
 

@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from astock_trader.agents.schemas import ResearchPlan, render_research_plan
 from astock_trader.agents.utils.structured import (
@@ -21,16 +22,16 @@ def _build_debate_context(state: dict[str, Any]) -> str:
 
     bull_history = debate.get("bull_history", [])
     bear_history = debate.get("bear_history", [])
-    full_history = debate.get("history", [])
+    full_history = debate.get("history", [])  # noqa: F841  # reserved for future use
 
     sections: list[str] = []
 
     if bull_history:
-        bull_text = "\n\n".join(f"**第{i+1}轮**: {h}" for i, h in enumerate(bull_history))
+        bull_text = "\n\n".join(f"**第{i + 1}轮**: {h}" for i, h in enumerate(bull_history))
         sections.append(f"## 多头论点\n{bull_text}")
 
     if bear_history:
-        bear_text = "\n\n".join(f"**第{i+1}轮**: {h}" for i, h in enumerate(bear_history))
+        bear_text = "\n\n".join(f"**第{i + 1}轮**: {h}" for i, h in enumerate(bear_history))
         sections.append(f"## 空头论点\n{bear_text}")
 
     # 添加分析师报告摘要

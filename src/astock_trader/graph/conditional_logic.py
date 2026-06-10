@@ -7,7 +7,7 @@ returns a string label that LangGraph uses to select the next node.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class ConditionalLogic:
     # ────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _has_tool_calls(state: Dict[str, Any]) -> bool:
+    def _has_tool_calls(state: dict[str, Any]) -> bool:
         """Return True when the last AI message contains tool_calls."""
         messages = state.get("messages", [])
         if not messages:
@@ -48,25 +48,25 @@ class ConditionalLogic:
         last = messages[-1]
         return hasattr(last, "tool_calls") and bool(last.tool_calls)
 
-    def should_continue_market(self, state: Dict[str, Any]) -> str:
+    def should_continue_market(self, state: dict[str, Any]) -> str:
         """Route after Market Analyst: tool loop or advance."""
         if self._has_tool_calls(state):
             return "tools_market"
         return "Msg Clear Market"
 
-    def should_continue_social(self, state: Dict[str, Any]) -> str:
+    def should_continue_social(self, state: dict[str, Any]) -> str:
         """Route after Social/Sentiment Analyst: tool loop or advance."""
         if self._has_tool_calls(state):
             return "tools_social"
         return "Msg Clear Social"
 
-    def should_continue_news(self, state: Dict[str, Any]) -> str:
+    def should_continue_news(self, state: dict[str, Any]) -> str:
         """Route after News Analyst: tool loop or advance."""
         if self._has_tool_calls(state):
             return "tools_news"
         return "Msg Clear News"
 
-    def should_continue_fundamentals(self, state: Dict[str, Any]) -> str:
+    def should_continue_fundamentals(self, state: dict[str, Any]) -> str:
         """Route after Fundamentals Analyst: tool loop or advance."""
         if self._has_tool_calls(state):
             return "tools_fundamentals"
@@ -76,7 +76,7 @@ class ConditionalLogic:
     #  Investment debate (Bull vs Bear)
     # ────────────────────────────────────────────────────────────
 
-    def should_continue_debate(self, state: Dict[str, Any]) -> str:
+    def should_continue_debate(self, state: dict[str, Any]) -> str:
         """Route after a debate turn.
 
         Returns
@@ -102,7 +102,7 @@ class ConditionalLogic:
     #  Risk debate (Aggressive / Conservative / Neutral)
     # ────────────────────────────────────────────────────────────
 
-    def should_continue_risk_analysis(self, state: Dict[str, Any]) -> str:
+    def should_continue_risk_analysis(self, state: dict[str, Any]) -> str:
         """Route after a risk-analyst turn.
 
         The three analysts rotate in a fixed cycle:

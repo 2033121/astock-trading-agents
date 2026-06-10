@@ -22,27 +22,26 @@ Quick start::
 """
 
 # --- Config ---------------------------------------------------------------
-from .config import get_config, set_config
-
 # --- Core stock data (akshare) -------------------------------------------
 from .akshare_data import (
-    get_stock_data,
-    get_indicators,
-    get_fundamentals,
     get_balance_sheet,
     get_cashflow,
+    get_fundamentals,
     get_income_statement,
+    get_indicators,
+    get_stock_data,
 )
+from .config import get_config, set_config
 
 # --- News data (EastMoney / akshare) -------------------------------------
 from .eastmoney_news import (
-    get_news,
     get_global_news,
     get_insider_transactions,
+    get_news,
 )
 
 # --- Vendor routing -------------------------------------------------------
-from .interface import route_to_vendor, list_available_methods
+from .interface import list_available_methods, route_to_vendor
 
 __all__ = [
     # config
