@@ -37,6 +37,6 @@ user_config.json
 ~/.astock_trader/
 .astock_trader/
 
-# HTML reports (generated output)
-D:/stock/
-/stock/
+# Trae local data (rules are tracked)
+.trae/*
+!.trae/rules/

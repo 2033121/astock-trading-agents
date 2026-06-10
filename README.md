@@ -370,6 +370,42 @@ mem.batch_update_with_outcomes([
 | 决策记忆 | 管理决策记忆日志，支持结算和反思 |
 | 交易配置 | 查看和修改 LLM 模型、数据源等配置参数 |
 
+## AI 编辑器适配
+
+本项目为多种 AI 编程助手提供内置的项目级指令文件，帮助 AI 快速理解代码库结构和开发规范。
+
+### Claude Code (`CLAUDE.md`)
+
+项目根目录包含 `CLAUDE.md`，Claude Code 每次会话启动时自动读取。包含：
+
+- 项目结构与模块说明
+- 常用命令速查
+- 编码规范与安全约束
+- 环境变量清单
+
+直接使用即可，无需额外配置。
+
+### OpenAI Codex (`AGENTS.md`)
+
+项目根目录包含 `AGENTS.md`，Codex CLI 每次启动时自动加载。采用 Codex 推荐的精简格式，包含：
+
+- Commands / Structure / Stack / Style / Tests / Boundaries 六大板块
+- 关键架构约束（空消息修复、报告生成回填机制等）
+
+直接使用即可，无需额外配置。
+
+### Trae IDE (`.trae/rules/`)
+
+`.trae/rules/` 目录下包含项目规则文件，Trae 在编码时自动注入上下文：
+
+| 文件 | 作用域 | 说明 |
+|------|--------|------|
+| `project_rules.md` | 全局 | 项目概览、架构、开发规范 |
+| `agents_rules.md` | `src/astock_trader/agents/**/*.py` | 智能体模块开发规则 |
+| `graph_rules.md` | `src/astock_trader/graph/**/*.py` | LangGraph 编排层开发规则 |
+
+直接使用即可，Trae 会根据文件路径自动匹配对应规则。
+
 ## 测试
 
 ```bash
