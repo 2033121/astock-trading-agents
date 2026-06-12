@@ -19,6 +19,7 @@ _PROVIDER_BASE_URLS: dict[str, str] = {
     "siliconflow": "https://api.siliconflow.cn/v1",
     "together": "https://api.together.xyz/v1",
     "groq": "https://api.groq.com/openai/v1",
+    "mimo": "https://api.xiaomimimo.com/v1",
 }
 
 

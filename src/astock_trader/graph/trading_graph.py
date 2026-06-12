@@ -35,8 +35,20 @@ from astock_trader.graph.propagation import Propagator
 from astock_trader.graph.reflection import Reflector
 from astock_trader.graph.setup import GraphSetup
 from astock_trader.graph.signal_processing import SignalProcessor
+from astock_trader.llm_clients.resilience import ResilientInvoker
 
 logger = logging.getLogger(__name__)
+
+# ────────────────────────────────────────────────────────────────
+#  Model-name → base_url auto-detection map
+#  When tiers use different models/providers, each gets its own endpoint.
+# ────────────────────────────────────────────────────────────────
+_MODEL_PREFIX_MAP: dict[str, str] = {
+    "deepseek": "https://api.deepseek.com/v1",
+    "mimo": "https://api.xiaomimimo.com/v1",
+    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "glm": "https://open.bigmodel.cn/api/paas/v4",
+}
 
 
 class TradingAgentsGraph:
@@ -68,20 +80,41 @@ class TradingAgentsGraph:
         self.debug = debug
         self.callbacks = callbacks or []
 
-        # ── Create LLM clients ────────────────────────────────
-        self.deep_thinking_llm, self.quick_thinking_llm = self._create_llms()
+        # ── Create LLM clients (4-tier) ──────────────────────
+        self.deep_thinking_llm, self.heavy_thinking_llm, self.standard_thinking_llm, self.quick_thinking_llm = (
+            self._create_llms()
+        )
 
         # ── Sub-components ────────────────────────────────────
+        self.invoker = ResilientInvoker(
+            max_retries=self.config.get("llm_max_retries", 3),
+            base_delay=self.config.get("llm_retry_base_delay", 4),
+            max_delay=self.config.get("llm_retry_max_delay", 60),
+            cb_threshold=self.config.get("circuit_breaker_threshold", 5),
+            cb_cooldown=self.config.get("circuit_breaker_cooldown", 30),
+        )
+
+        # ── Activate Headroom compression (Library mode) ─────
+        from astock_trader.llm_clients.resilience import configure_headroom
+        configure_headroom(
+            enable=self.config.get("enable_headroom_compression", True),
+            min_tokens=self.config.get("headroom_min_tokens", 500),
+        )
+
         self.logic = ConditionalLogic(
             max_debate_rounds=self.config.get("max_debate_rounds", 1),
             max_risk_discuss_rounds=self.config.get("max_risk_discuss_rounds", 1),
         )
         self.graph_setup = GraphSetup(
             deep_thinking_llm=self.deep_thinking_llm,
+            heavy_thinking_llm=self.heavy_thinking_llm,
+            standard_thinking_llm=self.standard_thinking_llm,
             quick_thinking_llm=self.quick_thinking_llm,
             conditional_logic=self.logic,
             language=self.config.get("output_language", "Chinese"),
             report_output_dir=self.config.get("report_output_dir", ""),
+            invoker=self.invoker,
+            context_slimming=self.config.get("enable_context_slimming", True),
         )
         self.propagator = Propagator(
             max_recur_limit=self.config.get("max_recur_limit", 100),
@@ -96,6 +129,28 @@ class TradingAgentsGraph:
                 os.path.expanduser("~/.astock_trader"),
             ),
         )
+
+        # ── Vector memory (optional) ─────────────────────────
+        self.market_memory = None
+        if self.config.get("enable_vector_memory", True):
+            try:
+                from astock_trader.memory.market_memory import MarketMemory
+                mem_dir = self.config.get("vector_memory_dir") or os.path.join(
+                    self.config.get("project_dir", os.path.expanduser("~/.astock_trader")),
+                    "vector_memory",
+                )
+                self.market_memory = MarketMemory(
+                    backend=self.config.get("vector_memory_backend", "auto"),
+                    persist_dir=mem_dir,
+                )
+                self.market_memory.load()
+                logger.info(
+                    "MarketMemory initialised: %d records indexed.",
+                    self.market_memory.record_count,
+                )
+            except Exception as exc:
+                logger.warning("MarketMemory init failed: %s", exc)
+                self.market_memory = None
 
         # ── Build and compile graph ───────────────────────────
         self._emit("graph_build_start", {})
@@ -176,6 +231,21 @@ class TradingAgentsGraph:
 
         # ── Past context from memory ──────────────────────────
         past_context = self.memory_log.get_past_context(company_name)
+
+        # Enrich with vector memory search (if available)
+        if self.market_memory and self.market_memory.record_count > 0:
+            try:
+                query = f"{company_name} 分析 投资"
+                records = self.market_memory.search(query, top_k=3)
+                memory_context = self.market_memory.format_for_prompt(records)
+                if memory_context:
+                    past_context = f"{past_context}\n\n{memory_context}" if past_context else memory_context
+                    logger.info(
+                        "Vector memory: injected %d historical records into context.",
+                        len(records),
+                    )
+            except Exception as exc:
+                logger.debug("Vector memory search failed: %s", exc)
 
         # ── Initial state ─────────────────────────────────────
         initial_state = self.propagator.create_initial_state(
@@ -259,58 +329,104 @@ class TradingAgentsGraph:
         # ── Store decision in memory ─────────────────────────
         self._store_decision(company_name, trade_date, final_state, rating)
 
+        # ── Index in vector memory ───────────────────────────
+        self._index_in_memory(company_name, trade_date, final_state, rating)
+
         return final_state, rating
 
     # ════════════════════════════════════════════════════════════
     #  Internal: LLM creation
     # ════════════════════════════════════════════════════════════
 
-    def _create_llms(self) -> tuple[Any, Any]:
-        """Create deep-thinking and quick-thinking LLM instances."""
-        from astock_trader.llm_clients.factory import create_llm_client
+    def _create_llms(self) -> tuple[Any, Any, Any, Any]:
+        """Create deep / heavy / standard / quick LLM instances (4-tier).
 
-        provider = self.config.get("llm_provider", "openai")
+        Each tier can use a different model and provider.  When ``backend_url``
+        is not set, the base URL is auto-resolved **per model** so that e.g.
+        ``mimo-v2.5-pro`` routes to the MiMo API while ``deepseek-v4-flash``
+        routes to DeepSeek.
+
+        Returns
+        -------
+        tuple[deep_llm, heavy_llm, standard_llm, quick_llm]
+        """
+        from astock_trader.llm_clients.factory import (
+            _PROVIDER_BASE_URLS,
+            create_llm_client,
+        )
+
+        provider = self.config.get("llm_provider", "deepseek")
         deep_model = self.config.get("deep_think_llm", "deepseek-chat")
+        heavy_model = self.config.get(
+            "heavy_think_llm",
+            self.config.get("deep_think_llm", "deepseek-chat"),
+        )
+        standard_model = self.config.get(
+            "standard_think_llm",
+            self.config.get("deep_think_llm", "deepseek-chat"),
+        )
         quick_model = self.config.get("quick_think_llm", "deepseek-chat")
-        base_url = self.config.get("backend_url")
+        explicit_url = self.config.get("backend_url")
 
         # API key resolution: check multiple env vars for compatibility
         api_key = (
             os.environ.get("OPENAI_API_KEY")
             or os.environ.get("DEEPSEEK_API_KEY")
             or os.environ.get("DASHSCOPE_API_KEY")
+            or os.environ.get("MIMO_API_KEY")
             or os.environ.get("LLM_API_KEY")
         )
 
-        # Auto-detect DeepSeek base URL when model is deepseek-* and no explicit URL
-        if not base_url and "deepseek" in deep_model.lower():
-            base_url = "https://api.deepseek.com/v1"
+        def _resolve(model: str) -> tuple[str, str | None]:
+            """Return (provider, base_url) for a model name.
+
+            If the user set an explicit ``backend_url``, use it for all tiers.
+            Otherwise, auto-detect from the model name.
+            """
+            if explicit_url:
+                return provider, explicit_url
+            low = model.lower()
+            for prefix, url in _MODEL_PREFIX_MAP.items():
+                if low.startswith(prefix):
+                    return prefix, url
+            # Fallback to the global provider
+            return provider, _PROVIDER_BASE_URLS.get(provider)
+
+        deep_prov, deep_url = _resolve(deep_model)
+        heavy_prov, heavy_url = _resolve(heavy_model)
+        std_prov, std_url = _resolve(standard_model)
+        quick_prov, quick_url = _resolve(quick_model)
 
         deep_client = create_llm_client(
-            provider=provider,
-            model=deep_model,
-            base_url=base_url,
-            api_key=api_key,
-            temperature=0.3,
+            provider=deep_prov, model=deep_model,
+            base_url=deep_url, api_key=api_key, temperature=0.3,
+        )
+        heavy_client = create_llm_client(
+            provider=heavy_prov, model=heavy_model,
+            base_url=heavy_url, api_key=api_key, temperature=0.3,
+        )
+        standard_client = create_llm_client(
+            provider=std_prov, model=standard_model,
+            base_url=std_url, api_key=api_key, temperature=0.3,
         )
         quick_client = create_llm_client(
-            provider=provider,
-            model=quick_model,
-            base_url=base_url,
-            api_key=api_key,
-            temperature=0.3,
+            provider=quick_prov, model=quick_model,
+            base_url=quick_url, api_key=api_key, temperature=0.3,
         )
 
         deep_llm = deep_client.get_llm()
+        heavy_llm = heavy_client.get_llm()
+        standard_llm = standard_client.get_llm()
         quick_llm = quick_client.get_llm()
 
         logger.info(
-            "LLMs created: deep=%s, quick=%s (provider=%s)",
-            deep_model,
-            quick_model,
-            provider,
+            "LLMs created (4-tier): deep=%s@%s, heavy=%s@%s, standard=%s@%s, quick=%s@%s",
+            deep_model, deep_prov,
+            heavy_model, heavy_prov,
+            standard_model, std_prov,
+            quick_model, quick_prov,
         )
-        return deep_llm, quick_llm
+        return deep_llm, heavy_llm, standard_llm, quick_llm
 
     # ════════════════════════════════════════════════════════════
     #  Internal: logging & memory
@@ -366,24 +482,224 @@ class TradingAgentsGraph:
         except Exception as exc:
             logger.warning("Failed to store decision in memory: %s", exc)
 
-    def _resolve_pending_memory(self, company_name: str) -> None:
-        """Attempt to resolve pending memory entries with reflections.
+    def _index_in_memory(
+        self,
+        company_name: str,
+        trade_date: str,
+        state: dict[str, Any],
+        rating: str,
+    ) -> None:
+        """Index the analysis result in vector memory for future retrieval."""
+        if self.market_memory is None:
+            return
 
-        For each pending entry, we would ideally fetch the actual return
-        and generate a reflection.  In the current implementation this is
-        a no-op placeholder; actual resolution requires external data
-        (e.g. a cron job that checks returns after N days).
+        try:
+            parts = []
+            for field in [
+                "market_report", "sentiment_report",
+                "news_report", "fundamentals_report",
+            ]:
+                value = state.get(field, "")
+                if value:
+                    parts.append(value)
+
+            decision = state.get("final_trade_decision", "")
+            if decision:
+                parts.append(decision)
+
+            if parts:
+                content = "\n\n".join(parts)
+                self.market_memory.index_analysis(
+                    ticker=company_name,
+                    date=trade_date,
+                    content=content,
+                    rating=rating,
+                )
+                self.market_memory.save()
+        except Exception as exc:
+            logger.debug("Failed to index in vector memory: %s", exc)
+
+    def _resolve_pending_memory(self, company_name: str) -> None:
+        """Resolve pending memory entries that are ≥5 days old.
+
+        For each eligible entry:
+        1. Fetch actual T+5 return via akshare.
+        2. Fetch benchmark (CSI 300) return for alpha calculation.
+        3. Generate LLM reflection via Reflector.
+        4. Batch-update the memory log (pending → resolved).
+
+        Errors on individual entries are logged and skipped so that one
+        bad ticker doesn't block the entire batch.
         """
+        from datetime import datetime, timedelta
+
         try:
             pending = self.memory_log.get_pending_entries()
-            if pending:
+            if not pending:
+                return
+
+            cutoff = datetime.now() - timedelta(days=5)
+            eligible: list[dict[str, Any]] = []
+            for entry in pending:
+                try:
+                    entry_date = datetime.strptime(entry["date"], "%Y-%m-%d")
+                    if entry_date <= cutoff:
+                        eligible.append(entry)
+                except (ValueError, KeyError):
+                    continue
+
+            if not eligible:
                 logger.debug(
-                    "Found %d pending memory entries for resolution.",
+                    "No pending entries old enough to resolve (%d pending, cutoff=%s).",
                     len(pending),
+                    cutoff.strftime("%Y-%m-%d"),
                 )
-                # TODO: Implement automatic resolution with actual returns
+                return
+
+            logger.info("Resolving %d pending memory entries (≥5 days old).", len(eligible))
+
+            updates: list[dict[str, Any]] = []
+            for entry in eligible:
+                ticker = entry["ticker"]
+                trade_date = entry["date"]
+                decision_text = ""
+                decision = entry.get("decision", {})
+                if isinstance(decision, dict):
+                    decision_text = decision.get("final_trade_decision", "") or decision.get("reasoning", "")
+
+                try:
+                    raw_ret = self._fetch_actual_returns(ticker, trade_date, days=5)
+                    bench_ret = self._fetch_benchmark_return(trade_date, days=5)
+
+                    if raw_ret is None:
+                        logger.debug("Could not fetch returns for %s, skipping.", ticker)
+                        continue
+
+                    alpha = (raw_ret - bench_ret) if bench_ret is not None else 0.0
+
+                    reflection_text = self.reflector.reflect_on_final_decision(
+                        final_decision=decision_text or f"评级: {entry.get('rating', '?')}",
+                        raw_return=raw_ret,
+                        alpha_return=alpha,
+                    )
+
+                    updates.append({
+                        "ticker": ticker,
+                        "trade_date": trade_date,
+                        "reflection": {
+                            "outcome": f"5日收益 {raw_ret:+.1%}, 超额 {alpha:+.1%}",
+                            "raw_return": round(raw_ret, 4),
+                            "alpha_return": round(alpha, 4),
+                            "lesson": reflection_text,
+                            "resolved_date": datetime.now().strftime("%Y-%m-%d"),
+                        },
+                    })
+                    logger.info(
+                        "Resolved %s@%s: raw=%.1f%%, alpha=%.1f%%",
+                        ticker, trade_date, raw_ret * 100, alpha * 100,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to resolve entry %s@%s: %s", ticker, trade_date, exc)
+                    continue
+
+            if updates:
+                count = self.memory_log.batch_update_with_outcomes(updates)
+                logger.info("Reflection complete: %d/%d entries resolved.", count, len(updates))
+
         except Exception as exc:
-            logger.debug("Memory resolution check skipped: %s", exc)
+            logger.warning("Memory resolution failed: %s", exc)
+
+    def _fetch_actual_returns(
+        self,
+        ticker: str,
+        trade_date: str,
+        days: int = 5,
+    ) -> float | None:
+        """Fetch actual stock return over *days* trading days after *trade_date*.
+
+        Uses akshare ``stock_zh_a_hist`` with forward-fill adjustment.
+        Returns ``None`` if data is unavailable or insufficient.
+        """
+        try:
+            import akshare as ak
+            from datetime import datetime, timedelta
+
+            dt = datetime.strptime(trade_date, "%Y-%m-%d")
+            start_str = dt.strftime("%Y%m%d")
+            end_str = (dt + timedelta(days=days + 10)).strftime("%Y%m%d")
+
+            df = ak.stock_zh_a_hist(
+                symbol=ticker, period="daily",
+                start_date=start_str, end_date=end_str,
+                adjust="qfq",
+            )
+            if df is None or df.empty or len(df) < 2:
+                return None
+
+            df["日期"] = df["日期"].astype(str)
+            df = df[df["日期"] >= trade_date].reset_index(drop=True)
+            if len(df) < 2:
+                return None
+
+            entry_price = float(df.iloc[0]["收盘"])
+            target_idx = min(days, len(df) - 1)
+            exit_price = float(df.iloc[target_idx]["收盘"])
+
+            if entry_price <= 0:
+                return None
+            return (exit_price - entry_price) / entry_price
+
+        except ImportError:
+            logger.debug("akshare not available for return fetching.")
+            return None
+        except Exception as exc:
+            logger.debug("Failed to fetch actual returns for %s: %s", ticker, exc)
+            return None
+
+    def _fetch_benchmark_return(
+        self,
+        trade_date: str,
+        days: int = 5,
+    ) -> float | None:
+        """Fetch CSI 300 benchmark return over *days* trading days.
+
+        Uses akshare ``index_zh_a_hist`` for the 沪深300 index (000300).
+        Returns ``None`` if data is unavailable.
+        """
+        try:
+            import akshare as ak
+            from datetime import datetime, timedelta
+
+            dt = datetime.strptime(trade_date, "%Y-%m-%d")
+            start_str = dt.strftime("%Y%m%d")
+            end_str = (dt + timedelta(days=days + 10)).strftime("%Y%m%d")
+
+            df = ak.index_zh_a_hist(
+                symbol="000300", period="daily",
+                start_date=start_str, end_date=end_str,
+            )
+            if df is None or df.empty or len(df) < 2:
+                return None
+
+            df["日期"] = df["日期"].astype(str)
+            df = df[df["日期"] >= trade_date].reset_index(drop=True)
+            if len(df) < 2:
+                return None
+
+            entry_price = float(df.iloc[0]["收盘"])
+            target_idx = min(days, len(df) - 1)
+            exit_price = float(df.iloc[target_idx]["收盘"])
+
+            if entry_price <= 0:
+                return None
+            return (exit_price - entry_price) / entry_price
+
+        except ImportError:
+            logger.debug("akshare not available for benchmark return.")
+            return None
+        except Exception as exc:
+            logger.debug("Failed to fetch benchmark return: %s", exc)
+            return None
 
     # ════════════════════════════════════════════════════════════
     #  Internal: helpers

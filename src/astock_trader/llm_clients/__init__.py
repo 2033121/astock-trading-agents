@@ -2,5 +2,6 @@
 
 from astock_trader.llm_clients.base_client import BaseLLMClient
 from astock_trader.llm_clients.factory import create_llm_client
+from astock_trader.llm_clients.resilience import CircuitBreakerOpen, ResilientInvoker
 
-__all__ = ["BaseLLMClient", "create_llm_client"]
+__all__ = ["BaseLLMClient", "create_llm_client", "ResilientInvoker", "CircuitBreakerOpen"]

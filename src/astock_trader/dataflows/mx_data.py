@@ -367,3 +367,39 @@ def get_shareholder_info(
     if result.get("status", -1) != 0:
         return f"[ERROR] 妙想股东查询失败: {result.get('message', '')}"
     return f"# {symbol} 股东信息（妙想）\n\n{_parse_data_tables(result)}"
+
+
+@_safe_call
+def get_industry_chain(
+    symbol: Annotated[str, "A股股票代码"],
+) -> str:
+    """通过妙想 API 查询公司产业链信息（上下游供应商、客户、竞争格局）。"""
+    query = f"{symbol} 产业链 上游供应商 下游客户 主要竞争对手 市场份额"
+    resp = requests.post(
+        f"{BASE_URL}/finskillshub/api/claw/query",
+        headers=_headers(),
+        json={"toolQuery": query},
+        timeout=_TIMEOUT,
+    )
+    result = resp.json()
+    if result.get("status", -1) != 0:
+        return f"[ERROR] 妙想产业链查询失败: {result.get('message', '')}"
+    return f"# {symbol} 产业链分析（妙想）\n\n{_parse_data_tables(result)}"
+
+
+@_safe_call
+def get_industry_peers(
+    symbol: Annotated[str, "A股股票代码"],
+) -> str:
+    """通过妙想 API 查询同行业可比公司及估值对比，覆盖多业务板块。"""
+    query = f"{symbol} 各业务板块 同行业可比公司 PE PB 市值 营收增速 对比 竞争对手"
+    resp = requests.post(
+        f"{BASE_URL}/finskillshub/api/claw/query",
+        headers=_headers(),
+        json={"toolQuery": query},
+        timeout=_TIMEOUT,
+    )
+    result = resp.json()
+    if result.get("status", -1) != 0:
+        return f"[ERROR] 妙想可比公司查询失败: {result.get('message', '')}"
+    return f"# {symbol} 可比公司对比（妙想）\n\n{_parse_data_tables(result)}"

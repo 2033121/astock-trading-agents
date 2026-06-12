@@ -35,7 +35,7 @@ src/astock_trader/
 
 - **Runtime**: Python 3.10+, LangGraph, LangChain
 - **Data**: akshare, Tushare Pro REST, EastMoney MX
-- **LLM**: OpenAI-compatible (DeepSeek, Qwen, GLM, Ollama, OpenRouter, SiliconFlow, Together, Groq)
+- **LLM**: OpenAI-compatible (DeepSeek, Qwen, GLM, Ollama, OpenRouter, SiliconFlow, Together, Groq, MiMo)
 - **CLI**: Typer + Rich
 - **Models**: Pydantic v2
 - **Testing**: pytest
@@ -43,15 +43,23 @@ src/astock_trader/
 ## Pipeline
 
 ```
-START → 4 Analysts (parallel, ReAct tool loops)
-→ Bull/Bear Debate (alternating rounds)
-→ Research Manager (synthesizes debate → investment plan)
-→ Trader (plan → executable trading strategy)
-→ Risk Debate (aggressive → conservative → neutral, multi-round)
-→ Portfolio Manager (final decision + rating)
-→ Report Generator (deterministic HTML report)
+START → 4 Analysts [Light] (parallel, ReAct tool loops)
+→ Bull/Bear Debate [Deep] (alternating rounds)
+→ Research Manager [Standard] (synthesizes debate → investment plan)
+→ Trader [Standard] (plan → executable trading strategy)
+→ Risk Debate [Standard] (aggressive → conservative → neutral, multi-round)
+→ Portfolio Manager [Deep] (final decision + rating)
+→ Report Generator [Light] (deterministic HTML report)
 → END
 ```
+
+## Model Allocation (3-tier)
+
+| Tier | Config Key | Agents | Rationale |
+|------|-----------|--------|-----------|
+| **Deep** | `deep_think_llm` | Bull/Bear Researchers, Portfolio Manager | Complex reasoning, argumentation, final decision |
+| **Standard** | `standard_think_llm` | Research Manager, Trader, 3 Risk Analysts | Balanced processing, risk debate, execution |
+| **Light** | `quick_think_llm` | 4 Analysts, SignalProcessor, Report Generator | Fast data collection, formatting |
 
 ## Style
 
@@ -90,4 +98,5 @@ pytest tests/test_agents.py
 | `OPENAI_API_KEY` | LLM API key (most providers) |
 | `TUSHARE_TOKEN` | Tushare Pro financial data |
 | `MX_APIKEY` | EastMoney MX news data |
+| `MIMO_API_KEY` | Xiaomi MiMo LLM API key |
 | `ASTOCK_REPORT_DIR` | HTML report output directory |

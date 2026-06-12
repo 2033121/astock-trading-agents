@@ -50,6 +50,9 @@ VENDOR_METHODS: dict[str, dict[str, str]] = {
     "get_express": {"tushare": "get_express"},
     "get_dividend": {"tushare": "get_dividend"},
     "get_margin_detail": {"tushare": "get_margin_detail"},
+    # --- Industry chain / peers (MX → akshare fallback) ---
+    "get_industry_chain": {"mx": "get_industry_chain", "akshare": "get_industry_chain"},
+    "get_industry_peers": {"mx": "get_industry_peers", "akshare": "get_industry_peers"},
 }
 
 # Mapping from vendor label to the module that contains its implementation.

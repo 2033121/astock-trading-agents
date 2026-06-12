@@ -467,3 +467,129 @@ def _find_date_column(df: pd.DataFrame) -> str | None:
         if any(kw in cs for kw in ("日期", "date", "Date", "报告", "REPORT_DATE")):
             return c
     return None
+
+
+def get_industry_peers(
+    symbol: str,
+) -> str:
+    """获取同行业及同概念可比公司列表。
+
+    先查询个股所属行业板块和相关概念板块，再获取各板块的成分股列表，
+    用于多产业公司的可比公司交叉对比分析。
+    """
+    import akshare as ak
+
+    sections = []
+
+    # 1. 获取个股基本信息，确定所属行业
+    try:
+        info_df = ak.stock_individual_info_em(symbol=symbol)
+        industry = None
+        for _, row in info_df.iterrows():
+            if "行业" in str(row.iloc[0]):
+                industry = str(row.iloc[1])
+                break
+        if not industry:
+            return f"[ERROR] 无法确定 {symbol} 所属行业"
+    except Exception as exc:
+        return f"[ERROR] 获取 {symbol} 行业信息失败: {exc}"
+
+    # 2. 获取主行业板块的成分股
+    cols_to_keep = ["代码", "名称", "最新价", "涨跌幅", "总市值", "流通市值", "市盈率-动态", "市净率"]
+    try:
+        cons_df = ak.stock_board_industry_cons_em(symbol=industry)
+        if cons_df is not None and not cons_df.empty:
+            available_cols = [c for c in cols_to_keep if c in cons_df.columns]
+            result_df = cons_df[available_cols].head(10)
+            sections.append(
+                f"## 行业板块：{industry}（共{len(cons_df)}家，前10家）\n\n"
+                + _df_to_markdown(result_df)
+            )
+    except Exception:
+        sections.append(f"## 行业板块：{industry}\n\n数据获取失败")
+
+    # 3. 查找公司所属的概念板块（取活跃度最高的前20个概念板块逐一匹配）
+    concept_hits = []
+    try:
+        all_concepts = ak.stock_board_concept_name_em()
+        if all_concepts is not None and not all_concepts.empty:
+            # 按成交额排序，取前20个活跃概念
+            sort_col = None
+            for c in all_concepts.columns:
+                if "成交额" in str(c) or "成交" in str(c):
+                    sort_col = c
+                    break
+            if sort_col:
+                all_concepts = all_concepts.sort_values(sort_col, ascending=False)
+            top_concepts = all_concepts.head(20)
+
+            name_col = None
+            for c in top_concepts.columns:
+                if "板块名称" in str(c) or "名称" in str(c):
+                    name_col = c
+                    break
+            if not name_col:
+                name_col = top_concepts.columns[1]
+
+            for _, row in top_concepts.iterrows():
+                concept_name = str(row[name_col])
+                try:
+                    cons = ak.stock_board_concept_cons_em(symbol=concept_name)
+                    if cons is not None and not cons.empty:
+                        # 检查目标股票是否在此概念板块中
+                        code_col = None
+                        for c in cons.columns:
+                            if "代码" in str(c):
+                                code_col = c
+                                break
+                        if code_col:
+                            match = cons[cons[code_col].astype(str).str.contains(symbol)]
+                            if not match.empty:
+                                available_cols = [c for c in cols_to_keep if c in cons.columns]
+                                top_5 = cons[available_cols].head(8)
+                                concept_hits.append(
+                                    f"## 概念板块：{concept_name}（前8家）\n\n"
+                                    + _df_to_markdown(top_5)
+                                )
+                                if len(concept_hits) >= 3:
+                                    break  # 最多取3个概念板块
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    if concept_hits:
+        sections.extend(concept_hits)
+
+    # 4. 组合输出
+    header = f"# {symbol} 可比公司（行业+概念板块交叉对比）\n\n"
+    if concept_hits:
+        header += f"> 该公司横跨 **{industry}** 行业 + {len(concept_hits)} 个概念板块\n\n"
+    summary = ""
+    if not concept_hits:
+        summary = f"\n\n> 未在活跃概念板块中找到 {symbol}，仅展示行业板块 '{industry}' 的成分股。"
+
+    return header + "\n\n---\n\n".join(sections) + summary
+
+
+def get_industry_chain(
+    symbol: str,
+) -> str:
+    """通过 akshare 获取公司行业分类信息（产业链数据降级方案）。
+
+    akshare 不提供直接的产业链上下游数据，此函数返回行业分类作为替代。
+    如需完整产业链信息，请使用妙想 API。
+    """
+    import akshare as ak
+
+    try:
+        info_df = ak.stock_individual_info_em(symbol=symbol)
+        lines = [f"# {symbol} 行业分类信息（akshare）\n"]
+        for _, row in info_df.iterrows():
+            key = str(row.iloc[0])
+            val = str(row.iloc[1])
+            lines.append(f"- **{key}**: {val}")
+        lines.append("\n> 注：akshare 不提供产业链上下游关系数据。如需供应商/客户/竞争格局等产业链详情，请使用妙想 API。")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"[ERROR] 获取 {symbol} 行业信息失败: {exc}"

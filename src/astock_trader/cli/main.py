@@ -101,6 +101,14 @@ def _build_config(
     cfg["max_debate_rounds"] = max_debate_rounds
     cfg["max_risk_discuss_rounds"] = max_risk_discuss_rounds
 
+    # ── Headroom 压缩启用（默认关闭） ──────────────────────────
+    if cfg.get("enable_headroom_compression", False):
+        from astock_trader.llm_clients.resilience import configure_headroom
+        configure_headroom(
+            enable=True,
+            min_tokens=cfg.get("headroom_min_tokens", 500),
+        )
+
     return cfg
 
 

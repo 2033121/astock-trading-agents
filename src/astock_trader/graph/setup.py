@@ -38,6 +38,7 @@ from langgraph.prebuilt import ToolNode
 from astock_trader.agents.utils.agent_states import AgentState
 from astock_trader.agents.utils.agent_utils import get_language_instruction
 from astock_trader.graph.conditional_logic import ConditionalLogic
+from astock_trader.llm_clients.resilience import ResilientInvoker
 
 logger = logging.getLogger(__name__)
 
@@ -99,13 +100,17 @@ _SOCIAL_SYSTEM = (
 _NEWS_SYSTEM = (
     "你是一位专业的A股新闻舆情分析师。使用工具获取个股新闻和全球财经新闻，"
     "分析新闻事件对股价的潜在影响，撰写新闻舆情分析报告。"
-    "关注政策变化、行业动态、公司公告等关键事件。"
+    "首先调用 get_macro_assessment 获取月度宏观评估作为背景，"
+    "关注公司公告、行业动态、政策变化、大宗交易等关键事件。"
+    "不要重复分析宏观面，直接引用宏观评估报告结论。"
 )
 
 _FUNDAMENTALS_SYSTEM = (
     "你是一位专业的A股基本面分析师。使用工具获取公司财务报表数据"
     "（资产负债表、利润表、现金流量表）和基本面指标，"
-    "评估公司的盈利能力、偿债能力、成长性和估值水平，撰写基本面分析报告。"
+    "评估公司的盈利能力、偿债能力、成长性、估值水平和产业链地位，撰写基本面分析报告。"
+    "必须包含产业链分析：上下游关系、竞争格局、议价能力、行业壁垒，"
+    "以及可比公司估值对比。如果公司涉及多个业务板块，必须分别分析各板块的产业链和竞争格局。"
 )
 
 
@@ -309,9 +314,13 @@ class GraphSetup:
     Parameters
     ----------
     deep_thinking_llm : BaseChatModel
-        LLM used for deep analysis (debates, managers, portfolio decision).
+        LLM for deep reasoning (Portfolio Manager final decision).
+    heavy_thinking_llm : BaseChatModel
+        LLM for heavy analysis (Bull/Bear debate).
+    standard_thinking_llm : BaseChatModel
+        LLM for standard processing (Trader, Research Manager, Risk Analysts).
     quick_thinking_llm : BaseChatModel
-        LLM used for fast analysis (analysts, trader).
+        LLM for quick tasks (Analysts, SignalProcessor, Report Generator).
     tool_nodes : dict[str, list[BaseTool]] | None
         Override tool lists per analyst key.  Missing keys fall back to
         the default tool sets.
@@ -325,17 +334,26 @@ class GraphSetup:
         self,
         deep_thinking_llm: Any,
         quick_thinking_llm: Any,
+        heavy_thinking_llm: Any | None = None,
+        standard_thinking_llm: Any | None = None,
         tool_nodes: dict[str, list[Any]] | None = None,
         conditional_logic: ConditionalLogic | None = None,
         language: str = "Chinese",
         report_output_dir: str = "",
+        invoker: ResilientInvoker | None = None,
+        context_slimming: bool = True,
     ) -> None:
         self.deep_llm = deep_thinking_llm
+        # Backward compat: heavy falls back to deep, standard falls back to deep
+        self.heavy_llm = heavy_thinking_llm or deep_thinking_llm
+        self.standard_llm = standard_thinking_llm or deep_thinking_llm
         self.quick_llm = quick_thinking_llm
         self.tool_overrides = tool_nodes or {}
         self.logic = conditional_logic or ConditionalLogic()
         self.language = language
         self.report_output_dir = report_output_dir
+        self.invoker = invoker or ResilientInvoker()
+        self.context_slimming = context_slimming
 
     # ────────────────────────────────────────────────────────────
     #  Public entry point
@@ -492,6 +510,38 @@ class GraphSetup:
     #  Internal helpers
     # ────────────────────────────────────────────────────────────
 
+    def _safe_invoke(self, llm: Any, messages: list, agent_name: str) -> str:
+        """Invoke LLM with retry + circuit breaker protection.
+
+        Returns the response content string.  Falls back to raw invoke
+        if the invoker raises CircuitBreakerOpen (logged as error).
+        """
+        from astock_trader.llm_clients.resilience import CircuitBreakerOpen
+
+        try:
+            return self.invoker.invoke(llm, messages, agent_name)
+        except CircuitBreakerOpen as exc:
+            logger.error(
+                "[%s] Circuit breaker open (%.1fs remaining). "
+                "Falling back to raw invoke.",
+                agent_name,
+                exc.remaining_cooldown,
+            )
+            response = llm.invoke(messages)
+            return response.content if hasattr(response, "content") else str(response)
+
+    def _gather_reports_for(self, state: AgentState, target_node: str) -> str:
+        """Gather analyst reports, optionally slimmed for the target node.
+
+        When ``context_slimming`` is enabled, delegates to
+        :func:`context_slimmer.slim_gathered_reports` for node-aware trimming.
+        Otherwise falls back to the original ``_gather_reports``.
+        """
+        if self.context_slimming:
+            from astock_trader.graph.context_slimmer import slim_gathered_reports
+            return slim_gathered_reports(state, target_node, enable=True)
+        return self._gather_reports(state)
+
     def _get_analyst_router(self, key: str) -> Callable:
         """Return the conditional routing function for a specific analyst."""
         dispatch = {
@@ -505,8 +555,14 @@ class GraphSetup:
     # ── Debate nodes ──────────────────────────────────────────
 
     def _create_debate_nodes(self) -> dict[str, Callable]:
-        """Create Bull Researcher, Bear Researcher, and Research Manager nodes."""
-        deep_llm = self.deep_llm
+        """Create Bull Researcher, Bear Researcher, and Research Manager nodes.
+
+        Model allocation:
+        - Bull/Bear Researcher → heavy_llm (complex argumentation)
+        - Research Manager → standard_llm (synthesis & judgment)
+        """
+        heavy_llm = self.heavy_llm
+        standard_llm = self.standard_llm
         lang = self.language
 
         # ── Bull Researcher ───────────────────────────────────
@@ -520,7 +576,7 @@ class GraphSetup:
             bear_history = debate_state.get("bear_history", [])
             bear_last = "\n\n".join(bear_history[-3:]) if bear_history else "（首轮发言，等待空头回应）"
 
-            reports = self._gather_reports(state)
+            reports = self._gather_reports_for(state, "bull")
 
             system_msg = (
                 "你是一位看多研究员（Bull Researcher）。你的任务是基于所有可用信息，"
@@ -540,13 +596,11 @@ class GraphSetup:
                 "请给出你的看多论据:"
             )
 
-            response = deep_llm.invoke(
-                [
+            response_msgs = [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
                 ]
-            )
-            content = response.content
+            content = self._safe_invoke(heavy_llm, response_msgs, "Bull Researcher")
 
             return {
                 "investment_debate_state": {
@@ -567,7 +621,7 @@ class GraphSetup:
             bull_history = debate_state.get("bull_history", [])
             bull_last = "\n\n".join(bull_history[-3:]) if bull_history else "（无多头论点）"
 
-            reports = self._gather_reports(state)
+            reports = self._gather_reports_for(state, "bear")
 
             system_msg = (
                 "你是一位看空研究员（Bear Researcher）。你的任务是基于所有可用信息，"
@@ -586,13 +640,11 @@ class GraphSetup:
                 "请给出你的看空论据:"
             )
 
-            response = deep_llm.invoke(
-                [
+            response_msgs = [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
                 ]
-            )
-            content = response.content
+            content = self._safe_invoke(heavy_llm, response_msgs, "Bear Researcher")
 
             return {
                 "investment_debate_state": {
@@ -613,7 +665,7 @@ class GraphSetup:
             bull_hist = "\n\n---\n\n".join(debate_state.get("bull_history", []))
             bear_hist = "\n\n---\n\n".join(debate_state.get("bear_history", []))
 
-            reports = self._gather_reports(state)
+            reports = self._gather_reports_for(state, "research_manager")
 
             system_msg = (
                 "你是研究员主管（Research Manager / 辩论裁判）。\n"
@@ -633,13 +685,10 @@ class GraphSetup:
                 "请给出你的综合投资方案:"
             )
 
-            response = deep_llm.invoke(
-                [
+            plan = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ]
-            )
-            plan = response.content
+                ], "Research Manager")
 
             return {
                 "investment_plan": plan,
@@ -657,15 +706,18 @@ class GraphSetup:
     # ── Trader node ───────────────────────────────────────────
 
     def _create_trader_node(self) -> Callable:
-        """Create the Trader node that converts the investment plan into a trade."""
-        quick_llm = self.quick_llm
+        """Create the Trader node that converts the investment plan into a trade.
+
+        Model allocation: standard_llm (balanced execution planning).
+        """
+        standard_llm = self.standard_llm
         lang = self.language
 
         def trader(state: AgentState) -> dict[str, Any]:
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
             investment_plan = state.get("investment_plan", "")
-            reports = self._gather_reports(state)
+            reports = self._gather_reports_for(state, "trader")
 
             system_msg = (
                 "你是一名专业交易员。基于研究员的投资方案和分析报告，"
@@ -686,22 +738,26 @@ class GraphSetup:
                 "请制定具体交易计划:"
             )
 
-            response = quick_llm.invoke(
-                [
+            trader_plan = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ]
-            )
+                ], "Trader")
 
-            return {"trader_investment_plan": response.content}
+            return {"trader_investment_plan": trader_plan}
 
         return trader
 
     # ── Risk debate nodes ─────────────────────────────────────
 
     def _create_risk_nodes(self) -> dict[str, Callable]:
-        """Create the three risk analysts and the Portfolio Manager."""
+        """Create the three risk analysts and the Portfolio Manager.
+
+        Model allocation:
+        - Aggressive/Conservative/Neutral Analysts → standard_llm (risk debate)
+        - Portfolio Manager → deep_llm (final decision)
+        """
         deep_llm = self.deep_llm
+        standard_llm = self.standard_llm
         lang = self.language
 
         # ── Aggressive Analyst ────────────────────────────────
@@ -710,7 +766,7 @@ class GraphSetup:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
             plan = state.get("trader_investment_plan", "")
-            reports = self._gather_reports(state)
+            reports = self._gather_reports_for(state, "risk")
 
             other_views = []
             cons = risk_state.get("current_conservative_response", "")
@@ -736,13 +792,10 @@ class GraphSetup:
                 "请给出你的激进派风控评估:"
             )
 
-            response = deep_llm.invoke(
-                [
+            content = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ]
-            )
-            content = response.content
+                ], "Aggressive Analyst")
 
             return {
                 "risk_debate_state": {
@@ -760,7 +813,7 @@ class GraphSetup:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
             plan = state.get("trader_investment_plan", "")
-            reports = self._gather_reports(state)
+            reports = self._gather_reports_for(state, "risk")
 
             other_views = []
             agg = risk_state.get("current_aggressive_response", "")
@@ -786,13 +839,10 @@ class GraphSetup:
                 "请给出你的保守派风控评估:"
             )
 
-            response = deep_llm.invoke(
-                [
+            content = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ]
-            )
-            content = response.content
+                ], "Conservative Analyst")
 
             return {
                 "risk_debate_state": {
@@ -810,7 +860,7 @@ class GraphSetup:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
             plan = state.get("trader_investment_plan", "")
-            reports = self._gather_reports(state)
+            reports = self._gather_reports_for(state, "risk")
 
             other_views = []
             agg = risk_state.get("current_aggressive_response", "")
@@ -836,13 +886,10 @@ class GraphSetup:
                 "请给出你的中性派风控评估:"
             )
 
-            response = deep_llm.invoke(
-                [
+            content = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ]
-            )
-            content = response.content
+                ], "Neutral Analyst")
 
             return {
                 "risk_debate_state": {
@@ -862,7 +909,7 @@ class GraphSetup:
             trade_date = state.get("trade_date", "")
             plan = state.get("trader_investment_plan", "")
             investment_plan = state.get("investment_plan", "")
-            reports = self._gather_reports(state)
+            reports = self._gather_reports_for(state, "portfolio_manager")
 
             agg_hist = "\n\n---\n\n".join(risk_state.get("aggressive_history", []))
             cons_hist = "\n\n---\n\n".join(risk_state.get("conservative_history", []))
@@ -895,13 +942,10 @@ class GraphSetup:
                 "请给出你的最终交易决策:"
             )
 
-            response = deep_llm.invoke(
-                [
+            decision = self._safe_invoke(deep_llm, [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ]
-            )
-            decision = response.content
+                ], "Portfolio Manager")
 
             return {
                 "final_trade_decision": decision,

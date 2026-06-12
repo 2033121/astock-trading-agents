@@ -10,10 +10,27 @@ DEFAULT_CONFIG = {
     "memory_log_path": os.path.expanduser("~/.astock_trader/memory/trading_memory.md"),
     "memory_log_max_entries": None,
     # ── LLM 配置 ─────────────────────────────────────────────
-    "llm_provider": "openai",
-    "deep_think_llm": "deepseek-chat",
-    "quick_think_llm": "deepseek-chat",
+    "llm_provider": "deepseek",
+    "deep_think_llm": "mimo-v2.5-pro",          # 深度推理层：基金经理最终决策
+    "heavy_think_llm": "deepseek-v4-pro",        # 重度分析层：多空研究员辩论
+    "standard_think_llm": "mimo-2.5",            # 标准处理层：研究经理+交易员+3风控
+    "quick_think_llm": "deepseek-v4-flash",      # 轻量采集层：4分析师+信号处理+报告
     "backend_url": None,  # 自定义 API 端点，默认 None 使用官方地址
+    # ── LLM 容错配置 ─────────────────────────────────────────
+    "llm_max_retries": 3,               # 最大重试次数
+    "llm_retry_base_delay": 4,          # 指数退避基础延迟（秒）
+    "llm_retry_max_delay": 60,          # 指数退避最大延迟（秒）
+    "circuit_breaker_threshold": 5,     # 熔断器连续失败阈值
+    "circuit_breaker_cooldown": 30,     # 熔断器冷却窗口（秒）
+    # ── 上下文瘦身 ────────────────────────────────────────────
+    "enable_context_slimming": True,    # 按目标节点裁剪报告，降低 token 消耗 ~25%
+    # ── Headroom Token 压缩 ───────────────────────────────────
+    "enable_headroom_compression": True,   # Headroom 压缩（默认开启，省 Token）
+    "headroom_min_tokens": 500,           # 低于此 token 数的消息不压缩
+    # ── 向量记忆 ──────────────────────────────────────────────
+    "enable_vector_memory": True,       # 索引历史分析案例，语义检索注入 prompt
+    "vector_memory_backend": "auto",    # "auto" / "tfidf" / "chroma"
+    "vector_memory_dir": None,          # 持久化目录，None 使用 project_dir/vector_memory
     # ── 运行控制 ──────────────────────────────────────────────
     "checkpoint_enabled": False,
     "output_language": "Chinese",
