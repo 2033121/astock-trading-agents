@@ -95,9 +95,21 @@ class TradingAgentsGraph:
         )
 
         # ── Activate Headroom compression (Library mode) ─────
+        # Windows 上 ONNX Runtime 不兼容 Kompress int8-wo 模型，自动降级关闭。
         from astock_trader.llm_clients.resilience import configure_headroom
+        _headroom_enabled = self.config.get("enable_headroom_compression", False)
+        if _headroom_enabled:
+            import sys as _sys
+            if _sys.platform == "win32":
+                _logger = logging.getLogger("astock_trader.headroom")
+                _logger.warning(
+                    "Headroom compression is not supported on Windows "
+                    "(ONNX Runtime MatMulNBits 仅支持 4-bit，Kompress 需要 8-bit)。"
+                    "已自动禁用。如需使用请在 macOS/Linux 上运行。"
+                )
+                _headroom_enabled = False
         configure_headroom(
-            enable=self.config.get("enable_headroom_compression", True),
+            enable=_headroom_enabled,
             min_tokens=self.config.get("headroom_min_tokens", 500),
         )
 

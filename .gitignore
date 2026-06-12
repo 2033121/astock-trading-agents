@@ -29,6 +29,9 @@ env/
 .coverage
 htmlcov/
 
+# Linting
+.ruff_cache/
+
 # OS
 .DS_Store
 Thumbs.db

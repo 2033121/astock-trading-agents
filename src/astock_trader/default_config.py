@@ -25,7 +25,10 @@ DEFAULT_CONFIG = {
     # ── 上下文瘦身 ────────────────────────────────────────────
     "enable_context_slimming": True,    # 按目标节点裁剪报告，降低 token 消耗 ~25%
     # ── Headroom Token 压缩 ───────────────────────────────────
-    "enable_headroom_compression": True,   # Headroom 压缩（默认开启，省 Token）
+    # 注意：headroom 的 Kompress ML 模型在 Windows + ONNX Runtime 环境下不兼容
+    # （int8-wo 量化模型仅支持 4-bit MatMulNBits），默认关闭。
+    # 在 macOS/Linux 或 headroom 修复 Windows 支持后可手动开启。
+    "enable_headroom_compression": False,  # Headroom 压缩（Windows 暂不可用，默认关闭）
     "headroom_min_tokens": 500,           # 低于此 token 数的消息不压缩
     # ── 向量记忆 ──────────────────────────────────────────────
     "enable_vector_memory": True,       # 索引历史分析案例，语义检索注入 prompt

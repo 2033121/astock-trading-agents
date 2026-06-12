@@ -6,12 +6,17 @@
 
 ## 核心特性
 
-- **多Agent辩论**: 4位分析师(技术/新闻/舆情/基本面) + 多空辩论 + 三方风控辩论
+- **多Agent辩论**: 15位专业角色(4位分析师 + 多空辩论 + 三方风控 + 研究/基金经理 + 交易员 + 信号/报告/记忆)
 - **多源数据融合**: Tushare 财务数据 + akshare 行情数据 + 东方财富新闻数据，三级 fallback
 - **记忆反思**: 历史决策记忆 + 延迟反思学习
 - **可视化报告**: 自动生成可交互 HTML 分析报告，10 阶段流水线过程全透明
 - **结构化输出**: Pydantic 模型保证输出格式，支持五级评级(买入/增持/持有/减持/卖出)
 - **灵活LLM**: OpenAI兼容接口，支持 DeepSeek/Qwen/GLM/Ollama 等 9 种提供商
+- **生产级容错**: Tenacity 指数退避重试（3次 4s→60s）+ 三态熔断器（5次失败→OPEN→30s冷却），保护所有 LLM 调用
+- **四层模型分配**: Deep/Heavy/Standard/Quick 四级模型分层，按角色复杂度自动路由到最优模型
+- **智能上下文瘦身**: 按目标节点裁剪报告内容（PM 保留结论 ~60-70% 压缩），整体节省 ~25% Token 消耗
+- **向量记忆**: 纯 Python TF-IDF bigram 语义检索，分析前注入历史上下文，分析后自动索引持久化
+- **反思闭环**: 跟踪历史预测 → akshare 获取实际收益 → LLM 生成反思教训 → 写回记忆提升未来决策
 
 ![报告预览](docs/images/demo-report-preview.png)
 
@@ -372,6 +377,21 @@ mem.batch_update_with_outcomes([
 | 决策记忆 | 管理决策记忆日志，支持结算和反思 |
 | 交易配置 | 查看和修改 LLM 模型、数据源等配置参数 |
 
+## v0.3 升级亮点
+
+v0.3 基于 [webnovel-studio](https://github.com/2033121/webnovel-studio) v0.2 的生产工程经验横向迁移，6 项核心改进全部实施：
+
+| 改进 | 模块 | 效果 |
+|------|------|------|
+| LLM 容错层 | `llm_clients/resilience.py` | 3 次指数退避重试 + 三态熔断器，API 故障时自动降级 |
+| 四层模型分配 | `graph/setup.py` | Deep/Heavy/Standard/Quick 按角色智能路由，成本降低 40%+ |
+| 反思闭环 | `graph/trading_graph.py` | T+5 实际收益回测 → LLM 反思 → 记忆更新，持续提升准确率 |
+| 上下文瘦身 | `graph/context_slimmer.py` | 按节点裁剪报告，PM 压缩 60-70%，整体节省 ~25% Token |
+| 向量记忆 | `memory/market_memory.py` | TF-IDF bigram 语义检索，突破"最近 N 次"上下文限制 |
+| Headroom 集成 | `resilience.py` | Token 压缩层，长 prompt 场景节省 60-95% Token |
+
+所有配置项均可通过 `astock-trader config --set` 或 `default_config.py` 调整。
+
 ## AI 编辑器适配
 
 本项目为多种 AI 编程助手提供内置的项目级指令文件，帮助 AI 快速理解代码库结构和开发规范。
@@ -411,7 +431,7 @@ mem.batch_update_with_outcomes([
 ## 测试
 
 ```bash
-# 运行所有测试
+# 运行所有测试（共 276 个：151 原始测试 + 125 v0.3 阶段测试）
 pytest tests/
 
 # 详细输出
@@ -424,6 +444,11 @@ pytest tests/test_signal_processing.py
 pytest tests/test_memory.py
 pytest tests/test_dataflows.py
 pytest tests/test_agents.py
+
+# v0.3 新增测试（容错 + 四层模型 + 反思 + 瘦身 + 向量记忆 + Headroom）
+python test_phase1.py   # 16 tests: resilience + schemas + parsers + config
+python test_phase2.py   # 60 tests: 4-tier models + reflection + snapshot + backtest
+python test_phase3.py   # 49 tests: context slimming + vector memory + pipeline integration
 
 # 带覆盖率报告
 pytest tests/ --cov=astock_trader --cov-report=term-missing
@@ -497,12 +522,17 @@ astock-trading-agents/
 │       │   ├── reflection.py       # 反思机制
 │       │   ├── signal_processing.py # 信号提取
 │       │   ├── report_generator.py # HTML 报告生成器
+│       │   ├── context_slimmer.py  # 智能上下文瘦身
 │       │   └── checkpointer.py     # SQLite 检查点
-│       └── llm_clients/            # LLM 客户端
+│       ├── llm_clients/            # LLM 客户端
+│       │   ├── __init__.py
+│       │   ├── base_client.py      # 基类
+│       │   ├── openai_client.py    # OpenAI 兼容客户端
+│       │   ├── factory.py          # 客户端工厂
+│       │   └── resilience.py       # LLM 容错层（重试 + 熔断 + Headroom）
+│       └── memory/                 # 向量记忆系统
 │           ├── __init__.py
-│           ├── base_client.py      # 基类
-│           ├── openai_client.py    # OpenAI 兼容客户端
-│           └── factory.py          # 客户端工厂
+│           └── market_memory.py   # TF-IDF bigram 语义检索 + 持久化
 └── tests/                          # 测试
     ├── conftest.py
     ├── test_schemas.py             # Pydantic 模型测试
@@ -510,7 +540,10 @@ astock-trading-agents/
     ├── test_signal_processing.py   # 信号提取测试
     ├── test_memory.py              # 记忆系统测试
     ├── test_dataflows.py           # 数据层路由测试
-    └── test_agents.py              # Agent 工厂测试
+    ├── test_agents.py              # Agent 工厂测试
+    ├── test_phase1.py              # v0.3: 容错 + schemas + parsers
+    ├── test_phase2.py              # v0.3: 四层模型 + 反思 + 快照
+    └── test_phase3.py              # v0.3: 瘦身 + 向量记忆 + 集成
 ```
 
 ## 评级体系
