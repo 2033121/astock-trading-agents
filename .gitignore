@@ -47,3 +47,6 @@ user_config.json
 # Trae local data (rules are tracked)
 .trae/*
 !.trae/rules/
+
+# CodeGraph index
+.codegraph/
