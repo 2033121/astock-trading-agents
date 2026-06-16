@@ -214,6 +214,7 @@ def _create_llm_agent(
     tools: list[Any],
     analyst_key: str = "",
     language: str = "Chinese",
+    backtest_consumer: Any | None = None,
 ) -> Callable:
     """Create a ReAct-style agent node function.
 
@@ -240,6 +241,14 @@ def _create_llm_agent(
             human_text = f"请分析股票 {company}，日期 {trade_date}。\n\n"
             if past_context:
                 human_text += f"## 历史决策参考\n{past_context}\n\n"
+            # Backtest feedback injection (conditional)
+            if backtest_consumer is not None:
+                try:
+                    fb = backtest_consumer.get_analyst_feedback()
+                    if fb:
+                        human_text += f"## 回测校准\n{fb}\n\n"
+                except Exception:
+                    pass
             human_text += "请使用工具获取数据，然后撰写详细的分析报告。"
 
             messages = [
@@ -342,6 +351,7 @@ class GraphSetup:
         report_output_dir: str = "",
         invoker: ResilientInvoker | None = None,
         context_slimming: bool = True,
+        backtest_consumer: Any | None = None,
     ) -> None:
         self.deep_llm = deep_thinking_llm
         # Backward compat: heavy falls back to deep, standard falls back to deep
@@ -354,6 +364,7 @@ class GraphSetup:
         self.report_output_dir = report_output_dir
         self.invoker = invoker or ResilientInvoker()
         self.context_slimming = context_slimming
+        self.backtest_consumer = backtest_consumer
 
     # ────────────────────────────────────────────────────────────
     #  Public entry point
@@ -396,6 +407,7 @@ class GraphSetup:
                 tools[key],
                 analyst_key=key,
                 language=self.language,
+                backtest_consumer=self.backtest_consumer,
             )
 
         clear_nodes: dict[str, Callable] = {}
@@ -592,9 +604,13 @@ class GraphSetup:
                 f"分析标的: {company}  |  日期: {trade_date}\n\n"
                 f"## 分析报告\n{reports}\n\n"
                 f"## 空头最新论点\n{bear_last}\n\n"
-                f"## 历史决策参考\n{past_context}\n\n"
-                "请给出你的看多论据:"
             )
+            if past_context:
+                human_msg += f"## 历史决策参考\n{past_context}\n\n"
+            bt_fb = self._bt_feedback("bull")
+            if bt_fb:
+                human_msg += f"## 回测校准\n{bt_fb}\n\n"
+            human_msg += "请给出你的看多论据:"
 
             response_msgs = [
                     SystemMessage(content=system_msg),
@@ -641,6 +657,9 @@ class GraphSetup:
             )
             if past_context:
                 human_msg += f"## 历史决策参考\n{past_context}\n\n"
+            bt_fb = self._bt_feedback("bear")
+            if bt_fb:
+                human_msg += f"## 回测校准\n{bt_fb}\n\n"
             human_msg += "请给出你的看空论据:"
 
             response_msgs = [
@@ -689,6 +708,9 @@ class GraphSetup:
             )
             if past_context:
                 human_msg += f"## 历史决策参考\n{past_context}\n\n"
+            bt_fb = self._bt_feedback("research_manager")
+            if bt_fb:
+                human_msg += f"## 回测校准\n{bt_fb}\n\n"
             human_msg += "请给出你的综合投资方案:"
 
             plan = self._safe_invoke(standard_llm, [
@@ -796,8 +818,11 @@ class GraphSetup:
                 f"## 交易计划\n{plan}\n\n"
                 f"## 分析报告\n{reports}\n\n"
                 f"## 其他分析师观点\n{other_text}\n\n"
-                "请给出你的激进派风控评估:"
             )
+            bt_fb = self._bt_feedback("risk")
+            if bt_fb:
+                human_msg += f"## 回测校准\n{bt_fb}\n\n"
+            human_msg += "请给出你的激进派风控评估:"
 
             content = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
@@ -844,8 +869,11 @@ class GraphSetup:
                 f"## 交易计划\n{plan}\n\n"
                 f"## 分析报告\n{reports}\n\n"
                 f"## 其他分析师观点\n{other_text}\n\n"
-                "请给出你的保守派风控评估:"
             )
+            bt_fb = self._bt_feedback("risk")
+            if bt_fb:
+                human_msg += f"## 回测校准\n{bt_fb}\n\n"
+            human_msg += "请给出你的保守派风控评估:"
 
             content = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
@@ -892,8 +920,11 @@ class GraphSetup:
                 f"## 交易计划\n{plan}\n\n"
                 f"## 分析报告\n{reports}\n\n"
                 f"## 其他分析师观点\n{other_text}\n\n"
-                "请给出你的中性派风控评估:"
             )
+            bt_fb = self._bt_feedback("risk")
+            if bt_fb:
+                human_msg += f"## 回测校准\n{bt_fb}\n\n"
+            human_msg += "请给出你的中性派风控评估:"
 
             content = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
@@ -952,6 +983,9 @@ class GraphSetup:
             )
             if past_context:
                 human_msg += f"## 历史交易记录\n{past_context}\n\n"
+            bt_fb = self._bt_feedback("portfolio_manager")
+            if bt_fb:
+                human_msg += f"## 回测校准\n{bt_fb}\n\n"
             human_msg += "请给出你的最终交易决策:"
 
             decision = self._safe_invoke(deep_llm, [
@@ -1008,6 +1042,29 @@ class GraphSetup:
         return report_generator
 
     # ── Utility ───────────────────────────────────────────────
+
+    def _bt_feedback(self, role: str) -> str:
+        """Get backtest feedback text for a specific role (safe wrapper).
+
+        Returns empty string when consumer is not available or gate not passed.
+        """
+        bc = self.backtest_consumer
+        if bc is None:
+            return ""
+        try:
+            dispatch = {
+                "analyst": bc.get_analyst_feedback,
+                "bull": lambda: bc.get_debater_feedback("bull"),
+                "bear": lambda: bc.get_debater_feedback("bear"),
+                "research_manager": bc.get_manager_feedback,
+                "risk": bc.get_risk_feedback,
+                "portfolio_manager": bc.get_pm_feedback,
+            }
+            fn = dispatch.get(role)
+            return fn() if fn else ""
+        except Exception as exc:
+            logger.debug("Backtest feedback retrieval failed for '%s': %s", role, exc)
+            return ""
 
     @staticmethod
     def _gather_reports(state: AgentState) -> str:

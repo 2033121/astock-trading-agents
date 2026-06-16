@@ -37,6 +37,12 @@ from astock_trader.graph.setup import GraphSetup
 from astock_trader.graph.signal_processing import SignalProcessor
 from astock_trader.llm_clients.resilience import ResilientInvoker
 
+# Backtest feedback consumer (optional import, graceful fallback)
+try:
+    from astock_trader.agents.utils.backtest_consumer import BacktestFeedbackConsumer
+except ImportError:
+    BacktestFeedbackConsumer = None  # type: ignore[assignment,misc]
+
 logger = logging.getLogger(__name__)
 
 # ────────────────────────────────────────────────────────────────
@@ -117,6 +123,26 @@ class TradingAgentsGraph:
             max_debate_rounds=self.config.get("max_debate_rounds", 1),
             max_risk_discuss_rounds=self.config.get("max_risk_discuss_rounds", 1),
         )
+
+        # ── Backtest feedback consumer (optional) ────────────
+        self.backtest_consumer = None
+        if self.config.get("enable_backtest_feedback", True) and BacktestFeedbackConsumer:
+            try:
+                self.backtest_consumer = BacktestFeedbackConsumer(
+                    feedback_path=self.config.get("backtest_feedback_path", ""),
+                    min_verified=self.config.get("backtest_feedback_min_verified", 10),
+                    expiry_days=self.config.get("backtest_feedback_expiry_days", 90),
+                )
+                info = self.backtest_consumer.quality_info
+                logger.info(
+                    "BacktestFeedbackConsumer initialised: gate=%s, verified=%s",
+                    info.get("gate_passed"),
+                    info.get("total_verified"),
+                )
+            except Exception as exc:
+                logger.warning("BacktestFeedbackConsumer init failed: %s", exc)
+                self.backtest_consumer = None
+
         self.graph_setup = GraphSetup(
             deep_thinking_llm=self.deep_thinking_llm,
             heavy_thinking_llm=self.heavy_thinking_llm,
@@ -127,6 +153,7 @@ class TradingAgentsGraph:
             report_output_dir=self.config.get("report_output_dir", ""),
             invoker=self.invoker,
             context_slimming=self.config.get("enable_context_slimming", True),
+            backtest_consumer=self.backtest_consumer,
         )
         self.propagator = Propagator(
             max_recur_limit=self.config.get("max_recur_limit", 100),

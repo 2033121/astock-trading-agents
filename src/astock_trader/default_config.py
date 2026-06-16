@@ -34,6 +34,16 @@ DEFAULT_CONFIG = {
     "enable_vector_memory": True,       # 索引历史分析案例，语义检索注入 prompt
     "vector_memory_backend": "auto",    # "auto" / "tfidf" / "chroma"
     "vector_memory_dir": None,          # 持久化目录，None 使用 project_dir/vector_memory
+    # ── 回测反馈注入 ──────────────────────────────────────────
+    # 由 Expert Suite Plugin 生成 backtest_feedback.json，Consumer 模块读取并注入各节点 prompt
+    "enable_backtest_feedback": True,   # 总开关（文件不存在时自动降级为无操作）
+    "backtest_feedback_path": "",       # 自定义路径，空则使用 project_dir/backtest_feedback.json
+    "backtest_feedback_min_verified": 10,  # 最少已验证快照数（质量门禁）
+    "backtest_feedback_expiry_days": 90,   # 反馈有效期（天）
+    # ── 记忆轮转 ──────────────────────────────────────────────
+    "enable_memory_rotation": True,     # 自动轮转旧记忆条目，防止文件无限增长
+    "memory_rotation_max_same": 10,     # 同标的保留最多 N 条 resolved 条目
+    "memory_rotation_max_cross": 10,    # 跨标的保留最多 N 条 resolved 条目
     # ── 运行控制 ──────────────────────────────────────────────
     "checkpoint_enabled": False,
     "output_language": "Chinese",
