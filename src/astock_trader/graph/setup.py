@@ -617,6 +617,7 @@ class GraphSetup:
             debate_state = state.get("investment_debate_state") or {}
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
+            past_context = state.get("past_context", "")
 
             bull_history = debate_state.get("bull_history", [])
             bull_last = "\n\n".join(bull_history[-3:]) if bull_history else "（无多头论点）"
@@ -637,8 +638,10 @@ class GraphSetup:
                 f"分析标的: {company}  |  日期: {trade_date}\n\n"
                 f"## 分析报告\n{reports}\n\n"
                 f"## 多头最新论点\n{bull_last}\n\n"
-                "请给出你的看空论据:"
             )
+            if past_context:
+                human_msg += f"## 历史决策参考\n{past_context}\n\n"
+            human_msg += "请给出你的看空论据:"
 
             response_msgs = [
                     SystemMessage(content=system_msg),
@@ -661,6 +664,7 @@ class GraphSetup:
             debate_state = state.get("investment_debate_state") or {}
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
+            past_context = state.get("past_context", "")
 
             bull_hist = "\n\n---\n\n".join(debate_state.get("bull_history", []))
             bear_hist = "\n\n---\n\n".join(debate_state.get("bear_history", []))
@@ -682,8 +686,10 @@ class GraphSetup:
                 f"## 分析报告\n{reports}\n\n"
                 f"## 多头论据\n{bull_hist}\n\n"
                 f"## 空头论据\n{bear_hist}\n\n"
-                "请给出你的综合投资方案:"
             )
+            if past_context:
+                human_msg += f"## 历史决策参考\n{past_context}\n\n"
+            human_msg += "请给出你的综合投资方案:"
 
             plan = self._safe_invoke(standard_llm, [
                     SystemMessage(content=system_msg),
@@ -765,6 +771,7 @@ class GraphSetup:
         def aggressive_analyst(state: AgentState) -> dict[str, Any]:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
+            trade_date = state.get("trade_date", "")
             plan = state.get("trader_investment_plan", "")
             reports = self._gather_reports_for(state, "risk")
 
@@ -785,7 +792,7 @@ class GraphSetup:
             )
 
             human_msg = (
-                f"标的: {company}\n\n"
+                f"标的: {company}  |  日期: {trade_date}\n\n"
                 f"## 交易计划\n{plan}\n\n"
                 f"## 分析报告\n{reports}\n\n"
                 f"## 其他分析师观点\n{other_text}\n\n"
@@ -812,6 +819,7 @@ class GraphSetup:
         def conservative_analyst(state: AgentState) -> dict[str, Any]:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
+            trade_date = state.get("trade_date", "")
             plan = state.get("trader_investment_plan", "")
             reports = self._gather_reports_for(state, "risk")
 
@@ -832,7 +840,7 @@ class GraphSetup:
             )
 
             human_msg = (
-                f"标的: {company}\n\n"
+                f"标的: {company}  |  日期: {trade_date}\n\n"
                 f"## 交易计划\n{plan}\n\n"
                 f"## 分析报告\n{reports}\n\n"
                 f"## 其他分析师观点\n{other_text}\n\n"
@@ -859,6 +867,7 @@ class GraphSetup:
         def neutral_analyst(state: AgentState) -> dict[str, Any]:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
+            trade_date = state.get("trade_date", "")
             plan = state.get("trader_investment_plan", "")
             reports = self._gather_reports_for(state, "risk")
 
@@ -879,7 +888,7 @@ class GraphSetup:
             )
 
             human_msg = (
-                f"标的: {company}\n\n"
+                f"标的: {company}  |  日期: {trade_date}\n\n"
                 f"## 交易计划\n{plan}\n\n"
                 f"## 分析报告\n{reports}\n\n"
                 f"## 其他分析师观点\n{other_text}\n\n"
@@ -907,6 +916,7 @@ class GraphSetup:
             risk_state = state.get("risk_debate_state") or {}
             company = state.get("company_of_interest", "")
             trade_date = state.get("trade_date", "")
+            past_context = state.get("past_context", "")
             plan = state.get("trader_investment_plan", "")
             investment_plan = state.get("investment_plan", "")
             reports = self._gather_reports_for(state, "portfolio_manager")
@@ -939,8 +949,10 @@ class GraphSetup:
                 f"## 激进派风控评估\n{agg_hist}\n\n"
                 f"## 保守派风控评估\n{cons_hist}\n\n"
                 f"## 中性派风控评估\n{neut_hist}\n\n"
-                "请给出你的最终交易决策:"
             )
+            if past_context:
+                human_msg += f"## 历史交易记录\n{past_context}\n\n"
+            human_msg += "请给出你的最终交易决策:"
 
             decision = self._safe_invoke(deep_llm, [
                     SystemMessage(content=system_msg),

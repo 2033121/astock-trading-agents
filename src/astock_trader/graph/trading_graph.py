@@ -341,6 +341,16 @@ class TradingAgentsGraph:
         # ── Store decision in memory ─────────────────────────
         self._store_decision(company_name, trade_date, final_state, rating)
 
+        # ── Rotate old memory entries to prevent unbounded growth ──
+        try:
+            if self.config.get("enable_memory_rotation", True):
+                self.memory_log._apply_rotation(
+                    max_same=self.config.get("memory_rotation_max_same", 10),
+                    max_cross=self.config.get("memory_rotation_max_cross", 10),
+                )
+        except Exception as exc:
+            logger.debug("Memory rotation failed (non-critical): %s", exc)
+
         # ── Index in vector memory ───────────────────────────
         self._index_in_memory(company_name, trade_date, final_state, rating)
 
