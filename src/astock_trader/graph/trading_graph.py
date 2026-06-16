@@ -132,12 +132,16 @@ class TradingAgentsGraph:
                     feedback_path=self.config.get("backtest_feedback_path", ""),
                     min_verified=self.config.get("backtest_feedback_min_verified", 10),
                     expiry_days=self.config.get("backtest_feedback_expiry_days", 90),
+                    decay_warn_days=self.config.get("backtest_feedback_decay_warn_days", 0),
+                    decay_ignore_days=self.config.get("backtest_feedback_decay_ignore_days", 0),
                 )
                 info = self.backtest_consumer.quality_info
                 logger.info(
-                    "BacktestFeedbackConsumer initialised: gate=%s, verified=%s",
+                    "BacktestFeedbackConsumer initialised: gate=%s, verified=%s, decay=%s, age=%dd",
                     info.get("gate_passed"),
                     info.get("total_verified"),
+                    info.get("decay_state", "n/a"),
+                    info.get("age_days", 0),
                 )
             except Exception as exc:
                 logger.warning("BacktestFeedbackConsumer init failed: %s", exc)

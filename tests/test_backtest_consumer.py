@@ -136,14 +136,16 @@ class TestSchemaValidation:
 
 class TestExpiry:
     def test_expired_feedback_rejected(self, tmp_path):
-        """Consumer should reject feedback older than expiry_days."""
+        """Consumer should reject feedback past decay_ignore_days."""
         path = str(tmp_path / "feedback.json")
-        _write_feedback(path, _make_feedback(days_ago=100))
-        consumer = BacktestFeedbackConsumer(feedback_path=path, expiry_days=90)
+        _write_feedback(path, _make_feedback(days_ago=200))
+        consumer = BacktestFeedbackConsumer(
+            feedback_path=path, decay_ignore_days=180,
+        )
         assert not consumer.is_active
 
     def test_fresh_feedback_accepted(self, tmp_path):
-        """Consumer should accept feedback within expiry window."""
+        """Consumer should accept feedback within fresh window."""
         path = str(tmp_path / "feedback.json")
         _write_feedback(path, _make_feedback(days_ago=10))
         consumer = BacktestFeedbackConsumer(feedback_path=path, expiry_days=90)
@@ -250,3 +252,132 @@ class TestQualityInfo:
         info = consumer.quality_info
         assert info["loaded"] is False
         assert info["gate_passed"] is False
+
+
+# ────────────────────────────────────────────────────────────────
+#  Decay tiers (Phase 3)
+# ────────────────────────────────────────────────────────────────
+
+
+class TestDecay:
+    """Three-tier decay: fresh → warning (0.5x) → expired (0x)."""
+
+    def _make_consumer(self, tmp_path, days_ago: int, **kwargs) -> BacktestFeedbackConsumer:
+        path = str(tmp_path / "feedback.json")
+        _write_feedback(path, _make_feedback(days_ago=days_ago))
+        return BacktestFeedbackConsumer(feedback_path=path, **kwargs)
+
+    # ── Fresh tier ──────────────────────────────────────────────
+
+    def test_fresh_state_within_warn_days(self, tmp_path):
+        """Feedback at 10 days should be fresh (warn=90)."""
+        consumer = self._make_consumer(tmp_path, days_ago=10)
+        assert consumer.decay_state == "fresh"
+        assert consumer.is_active
+
+    def test_fresh_returns_full_feedback(self, tmp_path):
+        """Fresh feedback should return full text without suffix."""
+        consumer = self._make_consumer(tmp_path, days_ago=5)
+        result = consumer.get_analyst_feedback()
+        assert "衰减" not in result
+        assert result == "分析师反馈文本"
+
+    def test_age_days_property(self, tmp_path):
+        consumer = self._make_consumer(tmp_path, days_ago=12)
+        assert consumer.age_days == 12
+
+    # ── Warning tier ────────────────────────────────────────────
+
+    def test_warning_state_between_warn_and_ignore(self, tmp_path):
+        """Feedback at 100 days should be in warning zone (warn=90, ignore=180)."""
+        consumer = self._make_consumer(
+            tmp_path, days_ago=100, decay_warn_days=90, decay_ignore_days=180,
+        )
+        assert consumer.decay_state == "warning"
+        assert consumer.is_active  # still loads, just reduced weight
+
+    def test_warning_appends_notice(self, tmp_path):
+        """Warning feedback should append decay notice."""
+        long_text = "这是一段用于测试衰减提示的较长反馈内容，包含多个句子。用于验证字符截断。"
+        path = str(tmp_path / "feedback.json")
+        _write_feedback(path, _make_feedback(
+            days_ago=100,
+            agent_feedback={"analysts": long_text},
+        ))
+        consumer = BacktestFeedbackConsumer(
+            feedback_path=path, decay_warn_days=90, decay_ignore_days=180,
+        )
+        result = consumer.get_analyst_feedback()
+        assert "衰减中" in result
+
+    def test_warning_halved_char_budget(self, tmp_path):
+        """Warning state should use halved character budget."""
+        # analysts max = 120 chars → warning budget = 60 chars
+        text = "A" * 80
+        path = str(tmp_path / "feedback.json")
+        _write_feedback(path, _make_feedback(
+            days_ago=100,
+            agent_feedback={"analysts": text},
+        ))
+        consumer = BacktestFeedbackConsumer(
+            feedback_path=path, decay_warn_days=90, decay_ignore_days=180,
+        )
+        result = consumer.get_analyst_feedback()
+        # 60 chars budget + "（回测反馈衰减中）" (9 chars) = ~69 max
+        assert len(result) <= 70
+
+    # ── Expired tier ────────────────────────────────────────────
+
+    def test_expired_state_past_ignore_days(self, tmp_path):
+        """Feedback at 200 days should be expired (ignore=180)."""
+        consumer = self._make_consumer(
+            tmp_path, days_ago=200, decay_warn_days=90, decay_ignore_days=180,
+        )
+        assert consumer.decay_state == "expired"
+        assert not consumer.is_active
+
+    def test_expired_returns_empty(self, tmp_path):
+        """Expired feedback should return empty string."""
+        consumer = self._make_consumer(
+            tmp_path, days_ago=200, decay_warn_days=90, decay_ignore_days=180,
+        )
+        assert consumer.get_analyst_feedback() == ""
+        assert consumer.get_pm_feedback() == ""
+
+    def test_exact_ignore_threshold_rejected(self, tmp_path):
+        """Feedback exactly at ignore threshold should be rejected."""
+        consumer = self._make_consumer(
+            tmp_path, days_ago=180, decay_warn_days=90, decay_ignore_days=180,
+        )
+        assert consumer.decay_state == "expired"
+
+    def test_exact_warn_threshold_in_warning(self, tmp_path):
+        """Feedback exactly at warn threshold should be in warning (not rejected)."""
+        consumer = self._make_consumer(
+            tmp_path, days_ago=90, decay_warn_days=90, decay_ignore_days=180,
+        )
+        assert consumer.decay_state == "warning"
+        assert consumer.is_active
+
+    # ── Boundary: no decay params (defaults) ────────────────────
+
+    def test_defaults_use_90_and_180(self, tmp_path):
+        """Without explicit params, defaults should be warn=90, ignore=180."""
+        consumer = self._make_consumer(tmp_path, days_ago=100)
+        assert consumer.decay_state == "warning"
+
+    def test_defaults_fresh_at_50_days(self, tmp_path):
+        consumer = self._make_consumer(tmp_path, days_ago=50)
+        assert consumer.decay_state == "fresh"
+
+    # ── quality_info includes decay ─────────────────────────────
+
+    def test_quality_info_includes_decay_fields(self, tmp_path):
+        path = str(tmp_path / "feedback.json")
+        _write_feedback(path, _make_feedback(days_ago=30))
+        consumer = BacktestFeedbackConsumer(feedback_path=path)
+        info = consumer.quality_info
+        assert "decay_state" in info
+        assert "age_days" in info
+        assert info["decay_state"] == "fresh"
+        assert info["age_days"] == 30

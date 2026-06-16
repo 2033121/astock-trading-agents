@@ -39,7 +39,9 @@ DEFAULT_CONFIG = {
     "enable_backtest_feedback": True,   # 总开关（文件不存在时自动降级为无操作）
     "backtest_feedback_path": "",       # 自定义路径，空则使用 project_dir/backtest_feedback.json
     "backtest_feedback_min_verified": 10,  # 最少已验证快照数（质量门禁）
-    "backtest_feedback_expiry_days": 90,   # 反馈有效期（天）
+    "backtest_feedback_expiry_days": 90,   # 反馈有效期（天）（兼容旧版，现由 decay 控制）
+    "backtest_feedback_decay_warn_days": 90,   # 衰减预警阈值（天），超过后注入权重降为 0.5x
+    "backtest_feedback_decay_ignore_days": 180,  # 衰减忽略阈值（天），超过后自动停止注入
     # ── 记忆轮转 ──────────────────────────────────────────────
     "enable_memory_rotation": True,     # 自动轮转旧记忆条目，防止文件无限增长
     "memory_rotation_max_same": 10,     # 同标的保留最多 N 条 resolved 条目
