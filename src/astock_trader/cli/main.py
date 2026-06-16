@@ -300,20 +300,26 @@ def analyze(
     color = rating_colors.get(rating, "white")
 
     if not quiet:
-        rating_panel = Panel(
-            Text(f" {rating} ", style=color, justify="center"),
-            title=f"[bold]{symbol} 最终评级[/bold]",
-            border_style=color,
-            width=40,
-        )
-        console.print(rating_panel)
-        console.print()
+        try:
+            rating_panel = Panel(
+                Text(f" {rating} ", style=color, justify="center"),
+                title=f"[bold]{symbol} 最终评级[/bold]",
+                border_style=color,
+                width=40,
+            )
+            console.print(rating_panel)
+            console.print()
+        except (UnicodeEncodeError, Exception):
+            pass  # Windows GBK terminal may fail on emoji/special chars
 
     # Full summary
     summary_md = _format_state_summary(final_state, rating)
 
     if not quiet:
-        console.print(Markdown(summary_md))
+        try:
+            console.print(Markdown(summary_md))
+        except (UnicodeEncodeError, Exception):
+            console.print(f"[dim]（终端编码不支持完整报告，请查看保存的结果文件）[/dim]")
 
     # ── Save output ───────────────────────────────────────────
     output_path = output
