@@ -409,21 +409,49 @@ class TradingAgentsGraph:
         std_prov, std_url = _resolve(standard_model)
         quick_prov, quick_url = _resolve(quick_model)
 
+        def _resolve_api_key(prov: str) -> str:
+            """Return the API key appropriate for *prov*.
+
+            Each provider has its own environment variable (e.g. MIMO_API_KEY
+            for the ``mimo`` provider).  Falls back to the generic resolution
+            chain so single-provider setups keep working unchanged.
+            """
+            _PROVIDER_KEY_ENV: dict[str, str] = {
+                "deepseek": "DEEPSEEK_API_KEY",
+                "mimo": "MIMO_API_KEY",
+                "qwen": "DASHSCOPE_API_KEY",
+                "dashscope": "DASHSCOPE_API_KEY",
+                "glm": "GLM_API_KEY",
+                "zhipu": "GLM_API_KEY",
+                "openai": "OPENAI_API_KEY",
+                "siliconflow": "SILICONFLOW_API_KEY",
+                "openrouter": "OPENROUTER_API_KEY",
+                "together": "TOGETHER_API_KEY",
+                "groq": "GROQ_API_KEY",
+            }
+            env_var = _PROVIDER_KEY_ENV.get(prov.lower())
+            if env_var:
+                key = os.environ.get(env_var)
+                if key:
+                    return key
+            # Fallback to the general resolution chain
+            return api_key or ""
+
         deep_client = create_llm_client(
             provider=deep_prov, model=deep_model,
-            base_url=deep_url, api_key=api_key, temperature=0.3,
+            base_url=deep_url, api_key=_resolve_api_key(deep_prov), temperature=0.3,
         )
         heavy_client = create_llm_client(
             provider=heavy_prov, model=heavy_model,
-            base_url=heavy_url, api_key=api_key, temperature=0.3,
+            base_url=heavy_url, api_key=_resolve_api_key(heavy_prov), temperature=0.3,
         )
         standard_client = create_llm_client(
             provider=std_prov, model=standard_model,
-            base_url=std_url, api_key=api_key, temperature=0.3,
+            base_url=std_url, api_key=_resolve_api_key(std_prov), temperature=0.3,
         )
         quick_client = create_llm_client(
             provider=quick_prov, model=quick_model,
-            base_url=quick_url, api_key=api_key, temperature=0.3,
+            base_url=quick_url, api_key=_resolve_api_key(quick_prov), temperature=0.3,
         )
 
         deep_llm = deep_client.get_llm()

@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "llm_provider": "deepseek",
     "deep_think_llm": "mimo-v2.5-pro",          # 深度推理层：基金经理最终决策
     "heavy_think_llm": "deepseek-v4-pro",        # 重度分析层：多空研究员辩论
-    "standard_think_llm": "mimo-2.5",            # 标准处理层：研究经理+交易员+3风控
+    "standard_think_llm": "mimo-v2.5",            # 标准处理层：研究经理+交易员+3风控
     "quick_think_llm": "deepseek-v4-flash",      # 轻量采集层：4分析师+信号处理+报告
     "backend_url": None,  # 自定义 API 端点，默认 None 使用官方地址
     # ── LLM 容错配置 ─────────────────────────────────────────
