@@ -368,7 +368,7 @@ mem.batch_update_with_outcomes([
 每天 15:30 分析自选股列表并生成报告
 ```
 
-插件包含 4 个 Skill：
+插件包含 5 个 Skill：
 
 | Skill | 说明 |
 |-------|------|
@@ -376,6 +376,22 @@ mem.batch_update_with_outcomes([
 | 分析历史 | 查看历史分析记录和决策结果 |
 | 决策记忆 | 管理决策记忆日志，支持结算和反思 |
 | 交易配置 | 查看和修改 LLM 模型、数据源等配置参数 |
+| 复盘深度分析 | 回测数据深度分析，生成 per-agent 校准反馈 (v0.4) |
+
+## v0.4 升级亮点
+
+v0.4 实现了完整的**反馈注入回路**——从回测跟踪到质量校验再到 prompt 注入，形成闭环：
+
+| 改进 | 模块 | 效果 |
+|------|------|------|
+| 反馈消费模块 | `agents/utils/backtest_consumer.py` | 读取 `backtest_feedback.json`，质量门禁（≥10 快照）+ 10 节点条件注入 |
+| 三级衰减 | `backtest_consumer.py` | fresh(<90d,1.0x) → warning(90-180d,0.5x) → expired(>180d,0x)，防止过时反馈误导 |
+| past_context 修复 | `graph/setup.py` | 修复 Bear/Manager/PM/3风控 缺失注入，消除辩论信息不对称 |
+| 追踪间隔修复 | `scripts/review_backtest.py` | T+N 改为交易日计数，修复周末/节假日导致的间隔偏差 |
+| 快照置信度 | `scripts/save_snapshot.py` | 新增 `confidence` 数值字段（0.0–1.0），供反馈加权使用 |
+| 记忆轮转 | `graph/trading_graph.py` | 自动调用 `_apply_rotation()`，防止记忆文件无限增长 |
+| 复盘深度分析 Skill | `skills/复盘深度分析/` | Expert Suite Plugin，LLM 深度分析生成 per-agent 校准建议 |
+| Cron 集成 | QoderWork | 每周五 17:00 自动运行回测+深度分析，结果推送微信 |
 
 ## v0.3 升级亮点
 
@@ -431,7 +447,7 @@ v0.3 基于 [webnovel-studio](https://github.com/2033121/webnovel-studio) v0.2 �
 ## 测试
 
 ```bash
-# 运行所有测试（共 276 个：151 原始测试 + 125 v0.3 阶段测试）
+# 运行所有测试（共 185 个）
 pytest tests/
 
 # 详细输出
@@ -444,11 +460,7 @@ pytest tests/test_signal_processing.py
 pytest tests/test_memory.py
 pytest tests/test_dataflows.py
 pytest tests/test_agents.py
-
-# v0.3 新增测试（容错 + 四层模型 + 反思 + 瘦身 + 向量记忆 + Headroom）
-python test_phase1.py   # 16 tests: resilience + schemas + parsers + config
-python test_phase2.py   # 60 tests: 4-tier models + reflection + snapshot + backtest
-python test_phase3.py   # 49 tests: context slimming + vector memory + pipeline integration
+pytest tests/test_backtest_consumer.py   # v0.4: 反馈消费 + 衰减测试 (34 tests)
 
 # 带覆盖率报告
 pytest tests/ --cov=astock_trader --cov-report=term-missing
@@ -465,7 +477,8 @@ astock-trading-agents/
 │   ├── 智能分析/                   # 多Agent分析
 │   ├── 分析历史/                   # 历史记录查看
 │   ├── 决策记忆/                   # 记忆管理
-│   └── 交易配置/                   # 配置管理
+│   ├── 交易配置/                   # 配置管理
+│   └── 复盘深度分析/               # 回测反馈深度分析 (v0.4)
 ├── src/
 │   └── astock_trader/
 │       ├── __init__.py
@@ -503,6 +516,7 @@ astock-trading-agents/
 │       │       ├── mx_data_tools.py        # 东方财富妙想数据工具
 │       │       ├── tushare_data_tools.py   # Tushare 数据工具
 │       │       ├── memory.py       # 交易记忆系统
+│       │       ├── backtest_consumer.py  # 回测反馈消费 (v0.4)
 │       │       ├── rating.py       # 评级解析器
 │       │       └── structured.py   # 结构化输出工具
 │       ├── dataflows/              # 数据层
@@ -541,9 +555,7 @@ astock-trading-agents/
     ├── test_memory.py              # 记忆系统测试
     ├── test_dataflows.py           # 数据层路由测试
     ├── test_agents.py              # Agent 工厂测试
-    ├── test_phase1.py              # v0.3: 容错 + schemas + parsers
-    ├── test_phase2.py              # v0.3: 四层模型 + 反思 + 快照
-    └── test_phase3.py              # v0.3: 瘦身 + 向量记忆 + 集成
+    └── test_backtest_consumer.py   # v0.4: 反馈消费 + 衰减测试
 ```
 
 ## 评级体系
