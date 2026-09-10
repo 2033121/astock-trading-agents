@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **英文精简版 README** (`README.en.md`)：面向国际读者的 condensed guide（架构/评级术语对照表/快速开始/MCP/Token 优化摘要/测试 CI），中文 README 顶部增加语言切换链接；评级体系中文↔英文对照表收录
+
 ### Changed
 
 - **辩论不满轮反转保护** (`graph/conditional_logic.py`):

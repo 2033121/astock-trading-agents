@@ -1,3 +1,5 @@
+[English](README.en.md) | 中文
+
 # A股智能决策系统
 
 基于 LangGraph 的多Agent辩论式量化交易决策框架，15位AI分析师协作，输出结构化投资评级与可视化分析报告。
