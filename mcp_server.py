@@ -51,6 +51,39 @@ PROTOCOL_VERSION = "2024-11-05"
 # --------------------------------------------------------------------------
 
 
+def review_backtest(days: int = 0, report: bool = False) -> dict[str, Any]:
+    """Run the backtest review (scripts/review_backtest.py) and return its summary.
+
+    Reviews historical snapshots' ratings against realised prices
+    (akshare), updates T+1/T+5/T+10/T+20 tracking and accuracy stats.
+    """
+    script = Path(__file__).resolve().parent / "scripts" / "review_backtest.py"
+    if not script.is_file():
+        return {"error": f"Script not found: {script}"}
+    cmd = [sys.executable, str(script), "--days", str(max(int(days), 0))]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS, check=False
+        )
+    except subprocess.TimeoutExpired:
+        return {"error": f"review_backtest timed out after {CLI_TIMEOUT_SECONDS}s"}
+    if proc.returncode != 0:
+        return {"error": proc.stderr.strip()[-2000:] or f"exit {proc.returncode}"}
+    stdout = proc.stdout.strip()
+    if report:
+        return {"summary": None, "report_markdown": stdout}
+    try:
+        return json.loads(stdout)
+    except json.JSONDecodeError:
+        start, end = stdout.find("{"), stdout.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                return json.loads(stdout[start : end + 1])
+            except json.JSONDecodeError as exc:
+                return {"error": f"Unparseable review output: {exc}", "raw_tail": stdout[-800:]}
+        return {"error": "No JSON on stdout", "raw_tail": stdout[-800:]}
+
+
 def _load_snapshots() -> list[dict[str, Any]]:
     path = Path(SNAPSHOT_LOG_PATH)
     if not path.is_file():
@@ -208,6 +241,17 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {"limit": {"type": "integer", "description": "条数，默认 10"}},
         },
     },
+    {
+        "name": "review_backtest",
+        "description": "回测复盘：将历史快照评级与实际行情对照，更新 T+1/5/10/20 追踪与准确率统计（可选输出 Markdown 报告）。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "只回测分析日期距今 >= N 天的记录，默认 0（全部）"},
+                "report": {"type": "boolean", "description": "true 时返回 Markdown 复盘报告"},
+            },
+        },
+    },
 ]
 
 _TOOL_FUNCS = {
@@ -215,6 +259,7 @@ _TOOL_FUNCS = {
     "list_snapshots": list_snapshots,
     "get_snapshot": get_snapshot,
     "read_recent_memories": read_recent_memories,
+    "review_backtest": review_backtest,
 }
 
 

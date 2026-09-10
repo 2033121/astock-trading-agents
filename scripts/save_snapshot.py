@@ -11,9 +11,9 @@
 """
 
 import json
+import os
 import re
 import sys
-import os
 from datetime import datetime
 
 LOG_PATH = os.environ.get("ASTOCK_SNAPSHOT_LOG_PATH", r"D:\stock\trading-agents\analysis_log.json")
@@ -47,7 +47,7 @@ def extract_price(text: str) -> float | None:
         return None
 
     # 价格数字模式（支持千分位逗号，如 1,275.88）
-    NUM = r"([\d,]+\.?\d*)"
+    NUM = r"([\d,]+\.?\d*)"  # noqa: N806
 
     patterns = [
         rf"当前价位[（(]约?{NUM}元[）)]",
@@ -330,7 +330,7 @@ def _calc_interval_days(date_a: str, date_b: str) -> int | None:
 def save_snapshot(result_path: str) -> dict:
     """读取结果 JSON 并保存快照到 analysis_log.json。"""
     # 读取结果文件
-    with open(result_path, "r", encoding="utf-8") as f:
+    with open(result_path, encoding="utf-8") as f:
         result = json.load(f)
 
     stock_code = result.get("company_of_interest", "")
@@ -408,9 +408,9 @@ def save_snapshot(result_path: str) -> dict:
     log_data = {"version": 1, "snapshots": []}
     if os.path.exists(LOG_PATH):
         try:
-            with open(LOG_PATH, "r", encoding="utf-8") as f:
+            with open(LOG_PATH, encoding="utf-8") as f:
                 log_data = json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             pass
 
     prev = find_previous_analysis(stock_code, trade_date, log_data.get("snapshots", []))

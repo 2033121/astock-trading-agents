@@ -12,11 +12,11 @@
 """
 
 import json
-import sys
 import os
+import sys
 from datetime import datetime, timedelta
 
-LOG_PATH = r"D:\stock\trading-agents\analysis_log.json"
+LOG_PATH = os.environ.get("ASTOCK_SNAPSHOT_LOG_PATH", r"D:\stock\trading-agents\analysis_log.json")
 REPORT_PATH = r"D:\stock\trading-agents\latest_report.md"
 
 # 评级映射：正值表示看多，负值表示看空
@@ -69,7 +69,7 @@ def find_trading_day(prices: dict, target_date: str, direction: str = "forward")
     在价格字典中找到最接近目标日期的交易日。
     direction: 'forward' 向后找最近的交易日, 'backward' 向前找
     """
-    target = datetime.strptime(target_date, "%Y-%m-%d")
+    datetime.strptime(target_date, "%Y-%m-%d")
     sorted_dates = sorted(prices.keys())
 
     if not sorted_dates:
@@ -105,7 +105,7 @@ def calculate_tracking(snapshot: dict, prices: dict) -> dict:
 
     # 按日期排序获取交易日列表（仅保留分析日期之后的）
     all_trading_days = sorted(
-        d for d in prices.keys() if d > analysis_date
+        d for d in prices if d > analysis_date
     )
 
     tracking_periods = [
@@ -174,11 +174,7 @@ def score_snapshot(snapshot: dict) -> dict:
     dir_scores = []
     for i, t in enumerate(tracks):
         change = t.get("change_pct", 0)
-        if direction_value > 0 and change > 0:
-            dir_scores.append(100)
-        elif direction_value < 0 and change < 0:
-            dir_scores.append(100)
-        elif direction_value == 0 and abs(change) < 3:
+        if direction_value > 0 and change > 0 or direction_value < 0 and change < 0 or direction_value == 0 and abs(change) < 3:
             dir_scores.append(100)
         elif direction_value == 0:
             dir_scores.append(max(0, 100 - abs(change) * 10))
@@ -363,7 +359,7 @@ def run_backtest(days_threshold: int = 0) -> tuple[list[dict], dict]:
         print(f"Error: {LOG_PATH} not found", file=sys.stderr)
         sys.exit(1)
 
-    with open(LOG_PATH, "r", encoding="utf-8") as f:
+    with open(LOG_PATH, encoding="utf-8") as f:
         log_data = json.load(f)
 
     snapshots = log_data.get("snapshots", [])
@@ -446,7 +442,7 @@ def save_updated_log(snapshots: list[dict]):
 def generate_report(snapshots: list[dict], summary: dict) -> str:
     """生成人类可读的 Markdown 复盘报告。"""
     lines = []
-    lines.append(f"## 分析复盘报告")
+    lines.append("## 分析复盘报告")
     lines.append(f"生成时间：{summary['backtest_time']}")
     lines.append("")
 

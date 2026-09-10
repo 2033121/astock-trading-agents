@@ -10,7 +10,6 @@
 
 import json
 import os
-import sys
 from datetime import datetime
 
 OUTPUT_PATH = r"D:\stock\trading-agents\macro_assessment.json"
@@ -80,7 +79,7 @@ def get_sector_performance() -> dict:
         import akshare as ak
 
         df = ak.stock_board_industry_name_em()
-        if df is not None and not df.empty:
+        if df is not None and not df.empty:  # noqa: SIM102
             # 按涨跌幅排序
             if "涨跌幅" in df.columns:
                 df_sorted = df.sort_values("涨跌幅", ascending=False)

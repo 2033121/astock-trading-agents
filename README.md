@@ -365,6 +365,7 @@ mem.batch_update_with_outcomes([
 | `list_snapshots` | 列出最近分析快照（含 T+1/T+5/T+10/T+20 追踪收益） |
 | `get_snapshot` | 一只股票的最新快照 + 历史评级时间线 + 累计价格变化 |
 | `read_recent_memories` | 读取最近的交易决策记忆（反思闭环结论） |
+| `review_backtest` | 回测复盘：评级-实际行情对照、T+1/5/10/20 追踪与准确率统计 |
 
 客户端配置示例（JSON）：
 

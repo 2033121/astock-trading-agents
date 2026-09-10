@@ -175,3 +175,55 @@ def test_stdio_end_to_end(mcp):
     responses = [json.loads(ln) for ln in proc.stdout.splitlines() if ln.strip()]
     assert [r["id"] for r in responses] == [1, 2]  # notification not echoed
     assert responses[1]["result"]["tools"]
+
+
+# ── review_backtest tool ──────────────────────────────────────────
+
+
+class _FakeProc:
+    def __init__(self, stdout: str, returncode: int = 0):
+        self.stdout = stdout
+        self.stderr = ""
+        self.returncode = returncode
+
+
+def test_tools_list_includes_review_backtest(mcp):
+    mod, _ = mcp
+    resp = mod.MCPServer().handle_message({"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
+    assert "review_backtest" in {t["name"] for t in resp["result"]["tools"]}
+
+
+def test_review_backtest_parses_summary(monkeypatch, mcp):
+    mod, _ = mcp
+    summary = {"total_reviewed": 5, "accuracy": 0.6}
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _FakeProc(json.dumps(summary)))
+    out = mod.review_backtest(days=0)
+    assert out == summary
+
+
+def test_review_backtest_html_guard(monkeypatch, mcp):
+    mod, _ = mcp
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _FakeProc("noise before\n{\"ok\": true}\ntrailing"))
+    out = mod.review_backtest()
+    assert out == {"ok": True}
+
+
+def test_review_backtest_report_mode(monkeypatch, mcp):
+    mod, _ = mcp
+    md = "# 复盘报告\n- 准确率 60%"
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _FakeProc(md))
+    out = mod.review_backtest(report=True)
+    assert out["report_markdown"].startswith("# 复盘报告")
+
+
+def test_review_backtest_nonzero_exit(monkeypatch, mcp):
+    mod, _ = mcp
+
+    def boom(*a, **k):
+        p = _FakeProc("", returncode=1)
+        p.stderr = "Traceback"
+        return p
+
+    monkeypatch.setattr(mod.subprocess, "run", boom)
+    out = mod.review_backtest()
+    assert "error" in out
