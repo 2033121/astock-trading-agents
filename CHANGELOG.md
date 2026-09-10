@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-10
 
 ### Fixed
 
@@ -169,6 +169,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **AI Editor Integration**: Project instructions for Claude Code (`CLAUDE.md`), OpenAI Codex (`AGENTS.md`), and Trae IDE (`.trae/rules/`)
 - **Testing**: 151 unit tests covering schemas, conditional logic, signal processing, memory, data routing, and agent factories
 
+[0.5.0]: https://github.com/2033121/astock-trading-agents/releases/tag/v0.5.0
 [0.4.0]: https://github.com/2033121/astock-trading-agents/releases/tag/v0.4.0
 [0.3.0]: https://github.com/2033121/astock-trading-agents/releases/tag/v0.3.0
 [0.1.0]: https://github.com/2033121/astock-trading-agents/releases/tag/v0.1.0
