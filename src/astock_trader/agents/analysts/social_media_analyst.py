@@ -11,6 +11,7 @@ from typing import Any
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from astock_trader.agents.utils.news_data_tools import get_news
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 
 
 def create_social_media_analyst(llm: Any) -> Callable:
@@ -33,6 +34,7 @@ def create_social_media_analyst(llm: Any) -> Callable:
             (
                 "system",
                 (
+                    SYSTEM_PREFIX + "\n\n" +
                     "你是一个A股市场舆情分析师。你的职责是分析市场情绪、投资者讨论热点，"
                     "评估市场对该股票的整体情绪倾向。\n\n"
                     "分析要点：\n"

@@ -8,6 +8,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
+
 
 def _build_reports_context(state: dict[str, Any]) -> str:
     """从 state 中构建四位分析师报告上下文。"""
@@ -62,7 +64,7 @@ def create_bear_researcher(llm: Any) -> Callable:
             "4. 用中文回答，条理清晰"
         )
 
-        response = llm.invoke([("human", prompt)])
+        response = llm.invoke([("system", SYSTEM_PREFIX), ("human", prompt)])
         response_text = response.content
 
         # 更新辩论状态

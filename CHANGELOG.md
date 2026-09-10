@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 
 - **Token 控制改进方案** (`docs/Token控制改进方案.md`)：基于 12 个开源项目 + 15 篇论文调研的 Token 消耗诊断与分层降耗路线图（P0 分层模型路由 / 极简任务规则引擎等六大策略）
+- **统一系统提示词前缀** (`agents/utils/prompt_prefix.py`)：新增 `SYSTEM_PREFIX` 共享常量（A股交易制度 + 分析纪律），全部 11 个 LLM 节点（4 分析师 / 多空研究员 / 3 风控 / 研究经理 / 交易员 / 基金经理）统一前置（Token 方案策略二 B）：
+  - 所有节点调用共享同一段固定前缀文本，命中 provider 端 prompt 前缀缓存（DeepSeek 磁盘 KV Cache 折扣约 90%+、OpenAI 50%）
+  - 新增 `tests/test_prompt_prefix.py` 防退化护栏（节点接线与顺序断言），测试总数 186 → 211
 
 ## [0.4.0] - 2026-06-16
 

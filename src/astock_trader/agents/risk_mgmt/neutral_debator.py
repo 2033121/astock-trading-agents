@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
+
 
 def _build_full_context(state: dict[str, Any]) -> str:
     """构建风控辩论的完整上下文。"""
@@ -93,7 +95,7 @@ def create_neutral_debator(llm: Any) -> Callable:
             "4. 给出平衡的风险管理建议"
         )
 
-        response = llm.invoke([("human", prompt)])
+        response = llm.invoke([("system", SYSTEM_PREFIX), ("human", prompt)])
         response_text = response.content
 
         # 更新风控辩论状态

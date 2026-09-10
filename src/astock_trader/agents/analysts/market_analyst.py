@@ -11,6 +11,7 @@ from typing import Any
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from astock_trader.agents.utils.core_stock_tools import get_indicators, get_stock_data
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 
 
 def create_market_analyst(llm: Any) -> Callable:
@@ -33,6 +34,7 @@ def create_market_analyst(llm: Any) -> Callable:
             (
                 "system",
                 (
+                    SYSTEM_PREFIX + "\n\n" +
                     "你是一个A股市场技术分析师。你的职责是分析股票的技术指标、价格走势、"
                     "成交量等数据，从技术面角度给出专业的市场分析。\n\n"
                     "分析要点：\n"

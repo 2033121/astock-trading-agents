@@ -11,6 +11,7 @@ from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 from astock_trader.agents.utils.news_data_tools import (
     get_global_news,
     get_insider_transactions,
@@ -39,6 +40,7 @@ def create_news_analyst(llm: Any) -> Callable:
             (
                 "system",
                 (
+                    SYSTEM_PREFIX + "\n\n" +
                     "你是一个A股新闻分析师。你的职责是分析与目标股票相关的新闻报道和市场动态，"
                     "评估外部因素对股价的影响。\n\n"
                     "分析要点：\n"

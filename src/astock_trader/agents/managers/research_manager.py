@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from astock_trader.agents.schemas import ResearchPlan, render_research_plan
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 from astock_trader.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
@@ -82,7 +83,7 @@ def create_research_manager(llm: Any, deep_think_llm: Any = None) -> Callable:
             "请用中文输出。"
         )
 
-        prompt_messages = [("human", prompt_text)]
+        prompt_messages = [("system", SYSTEM_PREFIX), ("human", prompt_text)]
 
         result = invoke_structured_or_freetext(
             structured_llm=structured_llm,

@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from astock_trader.agents.schemas import TraderProposal, render_trader_proposal
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 from astock_trader.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
@@ -67,7 +68,7 @@ def create_trader(llm: Any) -> Callable:
             "请用中文输出，计划应具体、可执行。"
         )
 
-        prompt_messages = [("human", prompt_text)]
+        prompt_messages = [("system", SYSTEM_PREFIX), ("human", prompt_text)]
 
         result = invoke_structured_or_freetext(
             structured_llm=structured_llm,

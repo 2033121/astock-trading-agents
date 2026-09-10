@@ -11,6 +11,7 @@ from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 from astock_trader.agents.utils.fundamental_data_tools import (
     get_balance_sheet,
     get_cashflow,
@@ -50,6 +51,7 @@ def create_fundamentals_analyst(llm: Any) -> Callable:
             (
                 "system",
                 (
+                    SYSTEM_PREFIX + "\n\n" +
                     "你是一个A股基本面分析师。你的职责是分析公司财务报表、盈利能力、估值水平"
                     "和产业链地位，评估公司的内在价值和投资吸引力。\n\n"
                     "分析要点：\n"
