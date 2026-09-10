@@ -1,0 +1,28 @@
+site_name: A股智能决策系统
+site_description: 基于 LangGraph 的多Agent辩论式量化交易决策框架（astock-trading-agents）
+site_url: https://2033121.github.io/astock-trading-agents/
+repo_url: https://github.com/2033121/astock-trading-agents
+repo_name: 2033121/astock-trading-agents
+docs_dir: docs
+site_dir: site
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+nav:
+  - 首页: index.md
+  - 使用说明: 使用说明.md
+  - English (README.en): README.en.md
+  - English: README.en.md
+  - Token 控制改进方案: Token控制改进方案.md
+  - 改进路线图: 改进路线图.md
+markdown_extensions:
+  - tables
+  - admonition
+  - toc:
+      permalink: true

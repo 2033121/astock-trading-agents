@@ -50,3 +50,8 @@ user_config.json
 
 # CodeGraph index
 .codegraph/
+
+# mkdocs build artifacts
+site/
+docs/使用说明.md
+docs/README.en.md
