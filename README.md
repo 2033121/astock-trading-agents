@@ -325,6 +325,7 @@ bull_node = create_bull_researcher(llm)
 manager_node = create_research_manager(llm, deep_think_llm=llm)
 
 import functools
+
 trader_node = functools.partial(create_trader(llm), company_name="贵州茅台")
 ```
 
@@ -336,24 +337,30 @@ from astock_trader.agents.utils.memory import TradingMemoryLog
 mem = TradingMemoryLog(memory_dir="~/.astock_trader")
 
 # 存储决策
-mem.store_decision("000001", "2025-06-10", {
-    "rating": "买入",
-    "action": "买入",
-    "reasoning": "技术面突破",
-})
+mem.store_decision(
+    "000001",
+    "2025-06-10",
+    {
+        "rating": "买入",
+        "action": "买入",
+        "reasoning": "技术面突破",
+    },
+)
 
 # 获取历史上下文
 context = mem.get_past_context("000001")
 
 # 批量更新反思
-mem.batch_update_with_outcomes([
-    {
-        "ticker": "000001",
-        "trade_date": "2025-06-10",
-        "reflection": {"outcome": "盈利5%", "lesson": "技术分析有效"},
-        "new_rating": "增持",
-    },
-])
+mem.batch_update_with_outcomes(
+    [
+        {
+            "ticker": "000001",
+            "trade_date": "2025-06-10",
+            "reflection": {"outcome": "盈利5%", "lesson": "技术分析有效"},
+            "new_rating": "增持",
+        },
+    ]
+)
 ```
 
 ## MCP Server

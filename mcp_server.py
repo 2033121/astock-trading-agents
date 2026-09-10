@@ -62,9 +62,7 @@ def review_backtest(days: int = 0, report: bool = False) -> dict[str, Any]:
         return {"error": f"Script not found: {script}"}
     cmd = [sys.executable, str(script), "--days", str(max(int(days), 0))]
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS, check=False
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS, check=False)
     except subprocess.TimeoutExpired:
         return {"error": f"review_backtest timed out after {CLI_TIMEOUT_SECONDS}s"}
     if proc.returncode != 0:
@@ -154,11 +152,7 @@ def read_recent_memories(limit: int = 10) -> dict[str, Any]:
 
 def analyze_stock(symbol: str, date: str | None = None, analysts: str | None = None) -> dict[str, Any]:
     """Run the full pipeline via the CLI and return a compact JSON summary."""
-    cli_snippet = (
-        "import sys; "
-        "from astock_trader.cli.main import app; "
-        "sys.exit(app(standalone_mode=True))"
-    )
+    cli_snippet = "import sys; from astock_trader.cli.main import app; sys.exit(app(standalone_mode=True))"
     cmd = [sys.executable, "-c", cli_snippet, "analyze", symbol]
     if date:
         cmd += ["--date", date]

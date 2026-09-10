@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-### Added
+### Fixed
+
+- **CI lint 与最新版 ruff 对齐**：ruff-action@v3 使用最新 ruff（0.16.x），23 个未格式化文件已统一 `ruff format`，根目录两个遗留 phase-e2e 脚本加入 ruff `exclude`（脚本式导入顺序不适用库 lint）；本地 `ruff check .` + `ruff format --check .` 双绿，241 测试通过
+
+### Changed
 
 - **文档站（GitHub Pages）** (`mkdocs.yml` + `docs/index.md` + `.github/workflows/docs.yml`)：mkdocs-material 主题，导航含中英 README/Token 方案/路线图；推送 master 涉及 README/docs 时自动构建并部署 Pages，`mkdocs build --strict` 本地验证通过；构建产物与同步副本已加入 .gitignore
 - **行业对比解读 Skill** (`skills/行业对比解读/SKILL.md`)：基于仓库自带 get_industry_peers/get_industry_chain/get_fundamentals 工具链的相对估值横截面——行业中位 PE/PB、目标分位数定位（含剔除负 PE 的显式规则）、多业务板块分别对标、块效应提示，及"分位数≠估值结论需与竞争格局互证"的解读纪律
