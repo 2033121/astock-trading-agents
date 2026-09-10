@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **辩论不满轮反转保护** (`graph/conditional_logic.py`):
+  - 多空辩论结算阈值从 `2 * max_debate_rounds` 调整为 `2 * max_debate_rounds + 1`
+  - 新增一条 Bull Researcher 最终反驳轮：`max_debate_rounds=1` 时序为 Bull → Bear → Bull(反驳) → Research Manager，确保裁决前双方论点均获得最后一次回应
+  - 同步更新 `tests/test_conditional_logic.py`（186 项测试全部通过）
+
+### Added
+
+- **Token 控制改进方案** (`docs/Token控制改进方案.md`)：基于 12 个开源项目 + 15 篇论文调研的 Token 消耗诊断与分层降耗路线图（P0 分层模型路由 / 极简任务规则引擎等六大策略）
+
 ## [0.4.0] - 2026-06-16
 
 ### Added

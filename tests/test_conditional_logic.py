@@ -149,30 +149,40 @@ class TestShouldContinueDebate:
         assert logic.should_continue_debate(state) == "Bull Researcher"
 
     def test_count_exceeds_threshold_routes_to_research_manager(self, logic):
-        """count >= 2*rounds -> Research Manager。"""
+        """count >= 2*rounds+1 -> Research Manager（含 Bull 最终反驳轮）。"""
         state = {
             "investment_debate_state": {
-                "count": 2,  # 2 >= 2*1
+                "count": 3,  # 2*1 + 1 = 3：Bull -> Bear -> Bull(反驳) 后结算
                 "current_response": "看多：继续看多",
             }
         }
         assert logic.should_continue_debate(state) == "Research Manager"
 
     def test_count_at_threshold_routes_to_research_manager(self, logic_2_rounds):
-        """count == 2*max_rounds -> Research Manager。"""
+        """count == 2*max_rounds+1 -> Research Manager。"""
         state = {
             "investment_debate_state": {
-                "count": 4,  # 4 >= 2*2
+                "count": 5,  # 2*2 + 1 = 5
                 "current_response": "看空：坚持看空",
             }
         }
         assert logic_2_rounds.should_continue_debate(state) == "Research Manager"
 
-    def test_count_below_threshold_continues_debate(self, logic_2_rounds):
-        """count < 2*max_rounds 时继续辩论。"""
+    def test_rebuttal_turn_still_routes_to_bull(self, logic):
+        """count == 2*rounds（Bear 刚说完）仍继续 -> Bull 反驳。"""
         state = {
             "investment_debate_state": {
-                "count": 3,  # 3 < 2*2=4
+                "count": 2,  # 2 < 2*1 + 1 = 3
+                "current_response": "看空：坚持看空",
+            }
+        }
+        assert logic.should_continue_debate(state) == "Bull Researcher"
+
+    def test_count_below_threshold_continues_debate(self, logic_2_rounds):
+        """count < 2*max_rounds+1 时继续辩论。"""
+        state = {
+            "investment_debate_state": {
+                "count": 4,  # 4 < 2*2 + 1 = 5
                 "current_response": "看多：仍然看多",
             }
         }

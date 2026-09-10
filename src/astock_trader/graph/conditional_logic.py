@@ -19,8 +19,10 @@ class ConditionalLogic:
     ----------
     max_debate_rounds : int
         Maximum number of full bull/bear debate rounds before the Research
-        Manager intervenes.  Each round produces one bull + one bear message,
-        so the debate counter threshold is ``2 * max_debate_rounds``.
+        Manager intervenes.  Each round produces one bull + one bear message.
+        After all rounds, the Bull Researcher gets one final rebuttal turn
+        (so the counter threshold is ``2 * max_debate_rounds + 1``).
+        Example: max_debate_rounds=1 → Bull → Bear → Bull(rebut) → Manager (3 turns).
     max_risk_discuss_rounds : int
         Maximum number of full risk-discussion rounds (aggressive -> conservative
         -> neutral) before the Portfolio Manager takes over.  Threshold is
@@ -79,6 +81,10 @@ class ConditionalLogic:
     def should_continue_debate(self, state: dict[str, Any]) -> str:
         """Route after a debate turn.
 
+        The debate allows ``max_debate_rounds`` full bull+bear rounds plus
+        one final Bull rebuttal, ensuring both sides always see each other's
+        arguments before the Research Manager adjudicates.
+
         Returns
         -------
         str
@@ -90,7 +96,7 @@ class ConditionalLogic:
         count = debate_state.get("count", 0)
         current_response = debate_state.get("current_response", "")
 
-        if count >= 2 * self.max_debate_rounds:
+        if count >= 2 * self.max_debate_rounds + 1:
             return "Research Manager"
 
         if current_response.startswith("看多"):
