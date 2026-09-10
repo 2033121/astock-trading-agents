@@ -69,16 +69,20 @@ check("section splitting works", len(sections) >= 2, f"got {len(sections)} secti
 # Test section scoring
 score_conclusion = _score_section("## 结论", "建议买入", ["评级", "结论", "建议"])
 score_detail = _score_section("### 技术指标", "MA5上穿MA10", ["评级", "结论"])
-check("conclusion scores higher", score_conclusion > score_detail,
-      f"conclusion={score_conclusion}, detail={score_detail}")
+check(
+    "conclusion scores higher", score_conclusion > score_detail, f"conclusion={score_conclusion}, detail={score_detail}"
+)
 
 # Test slim_for_portfolio_manager (heavy compression)
 long_report = "## 详细分析\n" + "这是一段很长的市场分析内容。" * 200
 long_report += "\n\n## 结论\n综合评估，建议买入该股票，目标价100元。"
 reports = {"市场/技术面分析": long_report}
 slimmed_pm = slim_for_portfolio_manager(reports)
-check("PM slimming reduces size", len(slimmed_pm["市场/技术面分析"]) < len(long_report),
-      f"original={len(long_report)}, slimmed={len(slimmed_pm['市场/技术面分析'])}")
+check(
+    "PM slimming reduces size",
+    len(slimmed_pm["市场/技术面分析"]) < len(long_report),
+    f"original={len(long_report)}, slimmed={len(slimmed_pm['市场/技术面分析'])}",
+)
 
 # Test slim_for_risk_analysts (moderate compression)
 risk_report = "## 风险因素\n" + "市场波动风险较大，建议控制仓位。\n" * 50
@@ -146,12 +150,16 @@ check("keywords reasonable count", len(keywords) <= 15)
 # Test TF-IDF index directly
 index = _TfIdfIndex()
 rec1 = AnalysisRecord(
-    ticker="600519", date="2026-06-01", chunk_index=0,
+    ticker="600519",
+    date="2026-06-01",
+    chunk_index=0,
     content="贵州茅台白酒龙头，业绩持续增长，估值合理",
     rating="买入",
 )
 rec2 = AnalysisRecord(
-    ticker="000001", date="2026-06-01", chunk_index=0,
+    ticker="000001",
+    date="2026-06-01",
+    chunk_index=0,
     content="平安银行金融股，利率下行压力较大，估值偏低",
     rating="持有",
 )
@@ -160,8 +168,7 @@ index.add(rec2)
 
 results = index.search("白酒 业绩 增长", top_k=2)
 check("TF-IDF search returns results", len(results) >= 1)
-check("TF-IDF search relevant first", results[0].ticker == "600519",
-      f"got {results[0].ticker}")
+check("TF-IDF search relevant first", results[0].ticker == "600519", f"got {results[0].ticker}")
 
 # Test MarketMemory (TF-IDF backend)
 mem = MarketMemory(backend="tfidf")
@@ -169,14 +176,16 @@ check("MarketMemory init", mem.record_count == 0)
 
 # Index some analyses
 n1 = mem.index_analysis(
-    "600519", "2026-06-01",
+    "600519",
+    "2026-06-01",
     "贵州茅台白酒龙头，高端消费品牌护城河深，业绩增长确定性强，当前估值处于历史低位",
     rating="买入",
 )
 check("index returns chunk count", n1 >= 1)
 
 n2 = mem.index_analysis(
-    "000001", "2026-06-02",
+    "000001",
+    "2026-06-02",
     "平安银行金融板块，受利率下行影响净息差收窄，但零售转型持续推进",
     rating="持有",
 )
@@ -215,9 +224,10 @@ try:
     mem.save()
 
     # Check files exist
-    check("persist creates files",
-          (Path(tmp_dir) / "all_records.json").exists() or
-          (Path(tmp_dir) / "analysis_texts.json").exists())
+    check(
+        "persist creates files",
+        (Path(tmp_dir) / "all_records.json").exists() or (Path(tmp_dir) / "analysis_texts.json").exists(),
+    )
 
     # Load into new instance
     mem2 = MarketMemory(backend="tfidf", persist_dir=tmp_dir)
@@ -307,10 +317,11 @@ with patch.object(TradingAgentsGraph, "__init__", lambda self, **kw: None):
     check("index_analysis called", mock_mm.index_analysis.called)
     if mock_mm.index_analysis.called:
         call_args = mock_mm.index_analysis.call_args
-        check("correct ticker passed", call_args.kwargs.get("ticker") == "600519" or
-              call_args[1].get("ticker") == "600519")
-        check("correct rating passed", call_args.kwargs.get("rating") == "买入" or
-              call_args[1].get("rating") == "买入")
+        check(
+            "correct ticker passed",
+            call_args.kwargs.get("ticker") == "600519" or call_args[1].get("ticker") == "600519",
+        )
+        check("correct rating passed", call_args.kwargs.get("rating") == "买入" or call_args[1].get("rating") == "买入")
     check("save called after index", mock_mm.save.called)
 
     # Test with market_memory=None

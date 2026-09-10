@@ -39,6 +39,7 @@ version: 1.0.0
 ```python
 # 伪代码 — agent 用 Python 或直接在 bash 中执行
 import json
+
 with open(r"D:\stock\trading-agents\analysis_log.json", "r", encoding="utf-8") as f:
     log = json.load(f)
 history = [s for s in log["snapshots"] if s["stock_code"] == "{target_stock_code}"]
@@ -158,6 +159,7 @@ with open(LOG, 'w', encoding='utf-8') as f:
 
 ```python
 import json
+
 with open(r"D:\stock\trading-agents\analysis_log.json", "r", encoding="utf-8") as f:
     log = json.load(f)
 snapshots = [s for s in log["snapshots"] if s["stock_code"] == "{code}"]
