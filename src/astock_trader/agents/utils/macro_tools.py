@@ -89,7 +89,9 @@ def get_macro_assessment(
     # 市场情绪
     sentiment = data.get("market_sentiment", {})
     if sentiment:
-        lines.append(f"\n## 市场情绪\n- 涨停: {sentiment.get('limit_up_count', '—')}家 | 跌停: {sentiment.get('limit_down_count', '—')}家")
+        lines.append(
+            f"\n## 市场情绪\n- 涨停: {sentiment.get('limit_up_count', '—')}家 | 跌停: {sentiment.get('limit_down_count', '—')}家"
+        )
 
     # 风险因素
     risks = data.get("risk_factors", [])

@@ -104,6 +104,7 @@ def _build_config(
     # ── Headroom 压缩启用（默认关闭） ──────────────────────────
     if cfg.get("enable_headroom_compression", False):
         from astock_trader.llm_clients.resilience import configure_headroom
+
         configure_headroom(
             enable=True,
             min_tokens=cfg.get("headroom_min_tokens", 500),

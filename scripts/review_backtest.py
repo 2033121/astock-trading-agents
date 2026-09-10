@@ -21,11 +21,11 @@ REPORT_PATH = r"D:\stock\trading-agents\latest_report.md"
 
 # 评级映射：正值表示看多，负值表示看空
 RATING_DIRECTION = {
-    "买入": 2,    # 强烈看多
-    "增持": 1,    # 偏看多
-    "持有": 0,    # 中性
-    "减持": -1,   # 偏看空
-    "卖出": -2,   # 强烈看空
+    "买入": 2,  # 强烈看多
+    "增持": 1,  # 偏看多
+    "持有": 0,  # 中性
+    "减持": -1,  # 偏看空
+    "卖出": -2,  # 强烈看空
 }
 
 
@@ -104,9 +104,7 @@ def calculate_tracking(snapshot: dict, prices: dict) -> dict:
     result = dict(snapshot)  # 浅拷贝
 
     # 按日期排序获取交易日列表（仅保留分析日期之后的）
-    all_trading_days = sorted(
-        d for d in prices if d > analysis_date
-    )
+    all_trading_days = sorted(d for d in prices if d > analysis_date)
 
     tracking_periods = [
         ("track_t1", 1),
@@ -174,7 +172,14 @@ def score_snapshot(snapshot: dict) -> dict:
     dir_scores = []
     for i, t in enumerate(tracks):
         change = t.get("change_pct", 0)
-        if direction_value > 0 and change > 0 or direction_value < 0 and change < 0 or direction_value == 0 and abs(change) < 3:
+        if (
+            direction_value > 0
+            and change > 0
+            or direction_value < 0
+            and change < 0
+            or direction_value == 0
+            and abs(change) < 3
+        ):
             dir_scores.append(100)
         elif direction_value == 0:
             dir_scores.append(max(0, 100 - abs(change) * 10))
@@ -220,7 +225,8 @@ def score_snapshot(snapshot: dict) -> dict:
     if assumptions and len(tracks) >= 2:
         # Simple heuristic: if direction was correct at T+10 and T+20, assumptions likely held
         late_correct = sum(
-            1 for i in range(2, len(tracks))
+            1
+            for i in range(2, len(tracks))
             if (direction_value > 0 and tracks[i].get("change_pct", 0) > 0)
             or (direction_value < 0 and tracks[i].get("change_pct", 0) < 0)
         )
@@ -271,6 +277,7 @@ def recognize_patterns(snapshots: list[dict]) -> dict:
 
     # ── Rating bias ──
     from collections import defaultdict
+
     rating_scores = defaultdict(list)
     for s in verified:
         rating = s.get("rating", "持有")

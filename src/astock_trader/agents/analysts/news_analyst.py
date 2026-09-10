@@ -40,8 +40,7 @@ def create_news_analyst(llm: Any) -> Callable:
             (
                 "system",
                 (
-                    SYSTEM_PREFIX + "\n\n" +
-                    "你是一个A股新闻分析师。你的职责是分析与目标股票相关的新闻报道和市场动态，"
+                    SYSTEM_PREFIX + "\n\n" + "你是一个A股新闻分析师。你的职责是分析与目标股票相关的新闻报道和市场动态，"
                     "评估外部因素对股价的影响。\n\n"
                     "分析要点：\n"
                     "1. 近期重要新闻事件及其对个股的影响\n"

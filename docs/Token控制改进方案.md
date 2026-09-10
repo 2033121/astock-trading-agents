@@ -65,11 +65,11 @@
 ```python
 # 在 trading_graph.py 的 _route_by_complexity() 中实现
 TASK_COMPLEXITY_MAP = {
-    "signal_extraction": "rule_engine",     # 正则/解析，0 Token
-    "report_summary": "mini_model",         # deepseek-v4-flash
-    "risk_assessment": "standard",          # 标准模型
-    "debate_argument": "heavy",             # 强力推理
-    "final_decision": "deep",               # 最强推理
+    "signal_extraction": "rule_engine",  # 正则/解析，0 Token
+    "report_summary": "mini_model",  # deepseek-v4-flash
+    "risk_assessment": "standard",  # 标准模型
+    "debate_argument": "heavy",  # 强力推理
+    "final_decision": "deep",  # 最强推理
 }
 ```
 
@@ -106,10 +106,10 @@ TASK_COMPLEXITY_MAP = {
 def summarize_report(report: str, agent: str) -> dict:
     """用 cheap model 将 2000 字报告压缩为 200 字结构化摘要"""
     return {
-        "conclusion": "...",     # ≤50 字
-        "key_metrics": {...},    # 数值表
-        "risks": [...],          # ≤3 条
-        "confidence": 0.0-1.0
+        "conclusion": "...",  # ≤50 字
+        "key_metrics": {...},  # 数值表
+        "risks": [...],  # ≤3 条
+        "confidence": 0.0 - 1.0,
     }
 ```
 
@@ -198,14 +198,11 @@ class SemanticCache:
 # 当前（冗余）
 {
     "name": "get_financial_statements",
-    "description": "获取公司的财务报表数据，包括资产负债表、利润表、现金流量表三大报表。这个工具可以帮助你全面了解公司的财务状况、盈利能力、偿债能力和现金流水平。使用前请确保输入正确的股票代码格式。"
+    "description": "获取公司的财务报表数据，包括资产负债表、利润表、现金流量表三大报表。这个工具可以帮助你全面了解公司的财务状况、盈利能力、偿债能力和现金流水平。使用前请确保输入正确的股票代码格式。",
 }
 
 # 优化后（精简）
-{
-    "name": "get_financial_statements",
-    "description": "获取三大报表(资产/利润/现金)。输入: stock_code 股票代码"
-}
+{"name": "get_financial_statements", "description": "获取三大报表(资产/利润/现金)。输入: stock_code 股票代码"}
 ```
 **节省：50-70% 工具描述 Token**
 
@@ -385,8 +382,8 @@ workflow.add_edge("parallel_analysts", "bull_researcher")
 ```python
 # 建立分析质量基准
 BASELINE_METRICS = {
-    "rating_accuracy": 0.0,   # 对比历史评级
-    "report_coverage": 0.0,   # 报告覆盖的关键维度
+    "rating_accuracy": 0.0,  # 对比历史评级
+    "report_coverage": 0.0,  # 报告覆盖的关键维度
     "decision_confidence": 0.0,  # 决策置信度分布
 }
 # 每次优化后自动运行对比

@@ -30,7 +30,7 @@ def test_compress_prose_short_body_untouched() -> None:
 
 
 def test_compress_prose_keeps_bullets_and_numbers() -> None:
-    body = _long_report()[len("## 基本面扫描\n"):].strip()
+    body = _long_report()[len("## 基本面扫描\n") :].strip()
     compressed = _compress_prose(body, 100)  # tiny threshold to force compression
     assert "营业收入增长率 12.3%" in compressed
     assert "ROE 15.8" in compressed

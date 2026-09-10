@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import chromadb  # type: ignore[import-untyped]
+
     _HAS_CHROMA = True
 except ImportError:
     _HAS_CHROMA = False
@@ -43,6 +44,7 @@ except ImportError:
 @dataclass
 class AnalysisRecord:
     """A single indexed analysis segment with metadata."""
+
     ticker: str
     date: str
     chunk_index: int
@@ -68,10 +70,34 @@ _MAX_CHUNK_CHARS = 1200
 
 # Financial stopwords (Chinese)
 _FINANCE_STOPWORDS = {
-    "分析", "报告", "市场", "公司", "股票", "投资", "建议",
-    "数据", "指标", "趋势", "情况", "方面", "问题", "结果",
-    "目前", "当前", "近期", "未来", "预计", "可能", "可以",
-    "但是", "然而", "同时", "此外", "因此", "所以", "如果",
+    "分析",
+    "报告",
+    "市场",
+    "公司",
+    "股票",
+    "投资",
+    "建议",
+    "数据",
+    "指标",
+    "趋势",
+    "情况",
+    "方面",
+    "问题",
+    "结果",
+    "目前",
+    "当前",
+    "近期",
+    "未来",
+    "预计",
+    "可能",
+    "可以",
+    "但是",
+    "然而",
+    "同时",
+    "此外",
+    "因此",
+    "所以",
+    "如果",
 }
 
 
@@ -171,7 +197,7 @@ class _TfIdfIndex:
     def _tokenise(text: str) -> Counter:
         """Character bigram tokenisation for Chinese financial text."""
         chars = [c for c in text if "\u4e00" <= c <= "\u9fff"]
-        bigrams = [f"{chars[i]}{chars[i+1]}" for i in range(len(chars) - 1)]
+        bigrams = [f"{chars[i]}{chars[i + 1]}" for i in range(len(chars) - 1)]
         # Also include English words
         eng_words = re.findall(r"[A-Za-z]{3,}", text)
         tokens: list[str] = chars + bigrams + bigrams + eng_words
@@ -244,7 +270,8 @@ class MarketMemory:
 
         logger.info(
             "MarketMemory initialised (backend=%s, persist=%s)",
-            self._backend, self.persist_dir or "in-memory",
+            self._backend,
+            self.persist_dir or "in-memory",
         )
 
     # -- Public API --
@@ -370,9 +397,7 @@ class MarketMemory:
     def clear(self) -> None:
         """Clear all indexed data."""
         if self._backend == "chroma":
-            self._chroma_collection = self._chroma_client.get_or_create_collection(
-                "market_memory"
-            )
+            self._chroma_collection = self._chroma_client.get_or_create_collection("market_memory")
             ids = self._chroma_collection.get()["ids"]
             if ids:
                 self._chroma_collection.delete(ids=ids)
@@ -397,8 +422,14 @@ class MarketMemory:
                 pickle.dump(self._tfidf_index, f)
             records_path = save_dir / "all_records.json"
             data = [
-                {"ticker": r.ticker, "date": r.date, "chunk_index": r.chunk_index,
-                 "content": r.content, "rating": r.rating, "keywords": r.keywords}
+                {
+                    "ticker": r.ticker,
+                    "date": r.date,
+                    "chunk_index": r.chunk_index,
+                    "content": r.content,
+                    "rating": r.rating,
+                    "keywords": r.keywords,
+                }
                 for r in self._all_records
             ]
             with open(records_path, "w", encoding="utf-8") as f:
@@ -427,9 +458,11 @@ class MarketMemory:
                     data = json.load(f)
                 self._all_records = [
                     AnalysisRecord(
-                        ticker=d["ticker"], date=d["date"],
+                        ticker=d["ticker"],
+                        date=d["date"],
                         chunk_index=d["chunk_index"],
-                        content=d["content"], rating=d.get("rating", ""),
+                        content=d["content"],
+                        rating=d.get("rating", ""),
                         keywords=d.get("keywords", []),
                     )
                     for d in data
@@ -450,9 +483,7 @@ class MarketMemory:
 
     def _init_chroma(self) -> None:
         persist = str(self.persist_dir) if self.persist_dir else None
-        self._chroma_client = chromadb.PersistentClient(
-            path=persist or "./.chroma_market"
-        )
+        self._chroma_client = chromadb.PersistentClient(path=persist or "./.chroma_market")
         self._chroma_collection = self._chroma_client.get_or_create_collection(
             "market_memory",
             metadata={"description": "Historical trading analysis semantic index"},
@@ -470,12 +501,15 @@ class MarketMemory:
             doc_id = record.label
             self._chroma_collection.add(
                 documents=[record.content],
-                metadatas=[{
-                    "ticker": record.ticker, "date": record.date,
-                    "chunk_index": record.chunk_index,
-                    "rating": record.rating,
-                    "keywords": ",".join(record.keywords),
-                }],
+                metadatas=[
+                    {
+                        "ticker": record.ticker,
+                        "date": record.date,
+                        "chunk_index": record.chunk_index,
+                        "rating": record.rating,
+                        "keywords": ",".join(record.keywords),
+                    }
+                ],
                 ids=[doc_id],
             )
         else:
@@ -496,15 +530,17 @@ class MarketMemory:
                     meta = results["metadatas"][0][i] if results["metadatas"] else {}
                     dist = results["distances"][0][i] if results["distances"] else 0
                     kw_str = meta.get("keywords", "")
-                    records.append(AnalysisRecord(
-                        ticker=meta.get("ticker", ""),
-                        date=meta.get("date", ""),
-                        chunk_index=int(meta.get("chunk_index", 0)),
-                        content=doc,
-                        rating=meta.get("rating", ""),
-                        keywords=kw_str.split(",") if kw_str else [],
-                        score=round(1.0 - dist, 4),
-                    ))
+                    records.append(
+                        AnalysisRecord(
+                            ticker=meta.get("ticker", ""),
+                            date=meta.get("date", ""),
+                            chunk_index=int(meta.get("chunk_index", 0)),
+                            content=doc,
+                            rating=meta.get("rating", ""),
+                            keywords=kw_str.split(",") if kw_str else [],
+                            score=round(1.0 - dist, 4),
+                        )
+                    )
             return records
         else:
             return self._tfidf_index.search(query, top_k=top_k)

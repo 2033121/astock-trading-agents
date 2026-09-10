@@ -34,8 +34,7 @@ def create_social_media_analyst(llm: Any) -> Callable:
             (
                 "system",
                 (
-                    SYSTEM_PREFIX + "\n\n" +
-                    "你是一个A股市场舆情分析师。你的职责是分析市场情绪、投资者讨论热点，"
+                    SYSTEM_PREFIX + "\n\n" + "你是一个A股市场舆情分析师。你的职责是分析市场情绪、投资者讨论热点，"
                     "评估市场对该股票的整体情绪倾向。\n\n"
                     "分析要点：\n"
                     "1. 市场情绪倾向（乐观/悲观/中性）\n"

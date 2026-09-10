@@ -70,10 +70,7 @@ class BacktestFeedbackConsumer:
         if feedback_path:
             self._path = Path(feedback_path)
         else:
-            self._path = (
-                Path(os.path.expanduser("~/.astock_trader"))
-                / _DEFAULT_FEEDBACK_FILE
-            )
+            self._path = Path(os.path.expanduser("~/.astock_trader")) / _DEFAULT_FEEDBACK_FILE
         self._min_verified = min_verified
         self._expiry_days = expiry_days
         # Decay tiers: default warn=expiry_days, ignore=180
@@ -245,8 +242,7 @@ class BacktestFeedbackConsumer:
         else:
             self._gate_passed = False
             logger.info(
-                "Backtest feedback loaded but gate NOT passed: "
-                "%d/%d verified snapshots required.",
+                "Backtest feedback loaded but gate NOT passed: %d/%d verified snapshots required.",
                 total_verified,
                 self._min_verified,
             )

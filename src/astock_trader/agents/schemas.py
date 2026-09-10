@@ -374,9 +374,7 @@ def parse_news_signal(raw: str) -> NewsSignal:
     data = _extract_json_block(raw)
     if data and isinstance(data, dict):
         if "news_sentiment" in data:
-            data["news_sentiment"] = _alias_resolve(
-                str(data["news_sentiment"]), _NEWS_SENTIMENT_ALIASES, "中性"
-            )
+            data["news_sentiment"] = _alias_resolve(str(data["news_sentiment"]), _NEWS_SENTIMENT_ALIASES, "中性")
         if not data.get("summary"):
             data["summary"] = raw[:200]
         try:
@@ -397,9 +395,7 @@ def parse_fundamental_signal(raw: str) -> FundamentalSignal:
     data = _extract_json_block(raw)
     if data and isinstance(data, dict):
         if "valuation" in data:
-            data["valuation"] = _alias_resolve(
-                str(data["valuation"]), _VALUATION_ALIASES, "合理"
-            )
+            data["valuation"] = _alias_resolve(str(data["valuation"]), _VALUATION_ALIASES, "合理")
         if not data.get("summary"):
             data["summary"] = raw[:200]
         try:

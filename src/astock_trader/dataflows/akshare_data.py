@@ -501,10 +501,7 @@ def get_industry_peers(
         if cons_df is not None and not cons_df.empty:
             available_cols = [c for c in cols_to_keep if c in cons_df.columns]
             result_df = cons_df[available_cols].head(10)
-            sections.append(
-                f"## 行业板块：{industry}（共{len(cons_df)}家，前10家）\n\n"
-                + _df_to_markdown(result_df)
-            )
+            sections.append(f"## 行业板块：{industry}（共{len(cons_df)}家，前10家）\n\n" + _df_to_markdown(result_df))
     except Exception:
         sections.append(f"## 行业板块：{industry}\n\n数据获取失败")
 
@@ -548,8 +545,7 @@ def get_industry_peers(
                                 available_cols = [c for c in cols_to_keep if c in cons.columns]
                                 top_5 = cons[available_cols].head(8)
                                 concept_hits.append(
-                                    f"## 概念板块：{concept_name}（前8家）\n\n"
-                                    + _df_to_markdown(top_5)
+                                    f"## 概念板块：{concept_name}（前8家）\n\n" + _df_to_markdown(top_5)
                                 )
                                 if len(concept_hits) >= 3:
                                     break  # 最多取3个概念板块
@@ -589,7 +585,9 @@ def get_industry_chain(
             key = str(row.iloc[0])
             val = str(row.iloc[1])
             lines.append(f"- **{key}**: {val}")
-        lines.append("\n> 注：akshare 不提供产业链上下游关系数据。如需供应商/客户/竞争格局等产业链详情，请使用妙想 API。")
+        lines.append(
+            "\n> 注：akshare 不提供产业链上下游关系数据。如需供应商/客户/竞争格局等产业链详情，请使用妙想 API。"
+        )
         return "\n".join(lines)
     except Exception as exc:
         return f"[ERROR] 获取 {symbol} 行业信息失败: {exc}"

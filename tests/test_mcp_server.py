@@ -203,7 +203,7 @@ def test_review_backtest_parses_summary(monkeypatch, mcp):
 
 def test_review_backtest_html_guard(monkeypatch, mcp):
     mod, _ = mcp
-    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _FakeProc("noise before\n{\"ok\": true}\ntrailing"))
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _FakeProc('noise before\n{"ok": true}\ntrailing'))
     out = mod.review_backtest()
     assert out == {"ok": True}
 

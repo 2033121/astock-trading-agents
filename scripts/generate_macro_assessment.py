@@ -33,7 +33,11 @@ def get_market_indices() -> dict:
 
         for name, code in index_map.items():
             try:
-                df = ak.stock_zh_index_daily_em(symbol=f"sh{code}" if code.startswith("0000") or code.startswith("0003") or code.startswith("0009") else f"sz{code}")
+                df = ak.stock_zh_index_daily_em(
+                    symbol=f"sh{code}"
+                    if code.startswith("0000") or code.startswith("0003") or code.startswith("0009")
+                    else f"sz{code}"
+                )
                 if df is not None and not df.empty:
                     latest = df.iloc[-1]
                     prev = df.iloc[-2] if len(df) > 1 else latest
@@ -118,8 +122,9 @@ def generate_assessment() -> dict:
     assessment = {
         "version": 1,
         "generated_at": now.isoformat(timespec="seconds"),
-        "valid_until": (now.replace(month=now.month + 1 if now.month < 12 else 1,
-                                     year=now.year + (1 if now.month == 12 else 0))).isoformat(timespec="seconds"),
+        "valid_until": (
+            now.replace(month=now.month + 1 if now.month < 12 else 1, year=now.year + (1 if now.month == 12 else 0))
+        ).isoformat(timespec="seconds"),
         "market_indices": get_market_indices(),
         "north_flow": get_north_flow(),
         "sector_performance": get_sector_performance(),
@@ -143,12 +148,18 @@ def save_assessment(assessment: dict):
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         json.dump(assessment, f, ensure_ascii=False, indent=2)
     print(f"Macro assessment saved to: {OUTPUT_PATH}")
-    print(json.dumps({
-        "generated_at": assessment["generated_at"],
-        "indices_count": len(assessment.get("market_indices", {})),
-        "has_north_flow": bool(assessment.get("north_flow")),
-        "has_sectors": bool(assessment.get("sector_performance")),
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "generated_at": assessment["generated_at"],
+                "indices_count": len(assessment.get("market_indices", {})),
+                "has_north_flow": bool(assessment.get("north_flow")),
+                "has_sectors": bool(assessment.get("sector_performance")),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -24,7 +24,8 @@ def _make_feedback(
             "total_verified": total_verified,
             "passed": gate_passed,
         },
-        "agent_feedback": agent_feedback or {
+        "agent_feedback": agent_feedback
+        or {
             "analysts": "分析师反馈文本",
             "bull_researcher": "多头反馈文本",
             "bear_researcher": "空头反馈文本",
@@ -136,7 +137,8 @@ class TestExpiry:
         path = str(tmp_path / "feedback.json")
         _write_feedback(path, _make_feedback(days_ago=200))
         consumer = BacktestFeedbackConsumer(
-            feedback_path=path, decay_ignore_days=180,
+            feedback_path=path,
+            decay_ignore_days=180,
         )
         assert not consumer.is_active
 
@@ -208,9 +210,12 @@ class TestTruncation:
         """Feedback exceeding max_chars should be truncated at sentence boundary."""
         long_text = "第一句话。" + "第二句很长的内容" * 50 + "。第三句话。"
         path = str(tmp_path / "feedback.json")
-        _write_feedback(path, _make_feedback(
-            agent_feedback={"analysts": long_text},
-        ))
+        _write_feedback(
+            path,
+            _make_feedback(
+                agent_feedback={"analysts": long_text},
+            ),
+        )
         consumer = BacktestFeedbackConsumer(feedback_path=path)
         result = consumer.get_analyst_feedback()
         assert len(result) <= 120 + 10  # allow some slack for sentence boundary
@@ -219,9 +224,12 @@ class TestTruncation:
         """Feedback within max_chars should not be modified."""
         short_text = "简短反馈"
         path = str(tmp_path / "feedback.json")
-        _write_feedback(path, _make_feedback(
-            agent_feedback={"analysts": short_text},
-        ))
+        _write_feedback(
+            path,
+            _make_feedback(
+                agent_feedback={"analysts": short_text},
+            ),
+        )
         consumer = BacktestFeedbackConsumer(feedback_path=path)
         assert consumer.get_analyst_feedback() == short_text
 
@@ -287,7 +295,10 @@ class TestDecay:
     def test_warning_state_between_warn_and_ignore(self, tmp_path):
         """Feedback at 100 days should be in warning zone (warn=90, ignore=180)."""
         consumer = self._make_consumer(
-            tmp_path, days_ago=100, decay_warn_days=90, decay_ignore_days=180,
+            tmp_path,
+            days_ago=100,
+            decay_warn_days=90,
+            decay_ignore_days=180,
         )
         assert consumer.decay_state == "warning"
         assert consumer.is_active  # still loads, just reduced weight
@@ -296,12 +307,17 @@ class TestDecay:
         """Warning feedback should append decay notice."""
         long_text = "这是一段用于测试衰减提示的较长反馈内容，包含多个句子。用于验证字符截断。"
         path = str(tmp_path / "feedback.json")
-        _write_feedback(path, _make_feedback(
-            days_ago=100,
-            agent_feedback={"analysts": long_text},
-        ))
+        _write_feedback(
+            path,
+            _make_feedback(
+                days_ago=100,
+                agent_feedback={"analysts": long_text},
+            ),
+        )
         consumer = BacktestFeedbackConsumer(
-            feedback_path=path, decay_warn_days=90, decay_ignore_days=180,
+            feedback_path=path,
+            decay_warn_days=90,
+            decay_ignore_days=180,
         )
         result = consumer.get_analyst_feedback()
         assert "衰减中" in result
@@ -311,12 +327,17 @@ class TestDecay:
         # analysts max = 120 chars → warning budget = 60 chars
         text = "A" * 80
         path = str(tmp_path / "feedback.json")
-        _write_feedback(path, _make_feedback(
-            days_ago=100,
-            agent_feedback={"analysts": text},
-        ))
+        _write_feedback(
+            path,
+            _make_feedback(
+                days_ago=100,
+                agent_feedback={"analysts": text},
+            ),
+        )
         consumer = BacktestFeedbackConsumer(
-            feedback_path=path, decay_warn_days=90, decay_ignore_days=180,
+            feedback_path=path,
+            decay_warn_days=90,
+            decay_ignore_days=180,
         )
         result = consumer.get_analyst_feedback()
         # 60 chars budget + "（回测反馈衰减中）" (9 chars) = ~69 max
@@ -327,7 +348,10 @@ class TestDecay:
     def test_expired_state_past_ignore_days(self, tmp_path):
         """Feedback at 200 days should be expired (ignore=180)."""
         consumer = self._make_consumer(
-            tmp_path, days_ago=200, decay_warn_days=90, decay_ignore_days=180,
+            tmp_path,
+            days_ago=200,
+            decay_warn_days=90,
+            decay_ignore_days=180,
         )
         assert consumer.decay_state == "expired"
         assert not consumer.is_active
@@ -335,7 +359,10 @@ class TestDecay:
     def test_expired_returns_empty(self, tmp_path):
         """Expired feedback should return empty string."""
         consumer = self._make_consumer(
-            tmp_path, days_ago=200, decay_warn_days=90, decay_ignore_days=180,
+            tmp_path,
+            days_ago=200,
+            decay_warn_days=90,
+            decay_ignore_days=180,
         )
         assert consumer.get_analyst_feedback() == ""
         assert consumer.get_pm_feedback() == ""
@@ -343,14 +370,20 @@ class TestDecay:
     def test_exact_ignore_threshold_rejected(self, tmp_path):
         """Feedback exactly at ignore threshold should be rejected."""
         consumer = self._make_consumer(
-            tmp_path, days_ago=180, decay_warn_days=90, decay_ignore_days=180,
+            tmp_path,
+            days_ago=180,
+            decay_warn_days=90,
+            decay_ignore_days=180,
         )
         assert consumer.decay_state == "expired"
 
     def test_exact_warn_threshold_in_warning(self, tmp_path):
         """Feedback exactly at warn threshold should be in warning (not rejected)."""
         consumer = self._make_consumer(
-            tmp_path, days_ago=90, decay_warn_days=90, decay_ignore_days=180,
+            tmp_path,
+            days_ago=90,
+            decay_warn_days=90,
+            decay_ignore_days=180,
         )
         assert consumer.decay_state == "warning"
         assert consumer.is_active

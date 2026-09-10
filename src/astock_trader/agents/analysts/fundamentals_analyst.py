@@ -51,8 +51,7 @@ def create_fundamentals_analyst(llm: Any) -> Callable:
             (
                 "system",
                 (
-                    SYSTEM_PREFIX + "\n\n" +
-                    "你是一个A股基本面分析师。你的职责是分析公司财务报表、盈利能力、估值水平"
+                    SYSTEM_PREFIX + "\n\n" + "你是一个A股基本面分析师。你的职责是分析公司财务报表、盈利能力、估值水平"
                     "和产业链地位，评估公司的内在价值和投资吸引力。\n\n"
                     "分析要点：\n"
                     "1. 盈利能力（营收增长、净利润、毛利率、ROE）\n"

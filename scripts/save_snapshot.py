@@ -151,8 +151,13 @@ def extract_analyst_signals(result: dict) -> dict:
             continue
         signal = {}
         # trend detection
-        bullish_kw = any(kw in text for kw in ["上涨趋势", "看多", "偏多", "强势", "突破", "放量上涨", "利好", "超预期", "资金流入"])
-        bearish_kw = any(kw in text for kw in ["下跌趋势", "看空", "偏空", "弱势", "破位", "放量下跌", "利空", "不及预期", "资金流出"])
+        bullish_kw = any(
+            kw in text for kw in ["上涨趋势", "看多", "偏多", "强势", "突破", "放量上涨", "利好", "超预期", "资金流入"]
+        )
+        bearish_kw = any(
+            kw in text
+            for kw in ["下跌趋势", "看空", "偏空", "弱势", "破位", "放量下跌", "利空", "不及预期", "资金流出"]
+        )
         if bullish_kw and not bearish_kw:
             signal["rating"] = "正面"
         elif bearish_kw and not bullish_kw:
@@ -249,20 +254,13 @@ def extract_key_assumptions(result: dict) -> list[str]:
     return unique[:5]
 
 
-def find_previous_analysis(
-    stock_code: str, trade_date: str, snapshots: list[dict]
-) -> dict | None:
+def find_previous_analysis(stock_code: str, trade_date: str, snapshots: list[dict]) -> dict | None:
     """查找同一标的最近一次历史分析（不含当前日期）。
 
     Returns:
         最近一次历史快照 dict，或 None（无历史记录时）。
     """
-    prev = [
-        s
-        for s in snapshots
-        if s.get("stock_code") == stock_code
-        and s.get("analysis_date", "") < trade_date
-    ]
+    prev = [s for s in snapshots if s.get("stock_code") == stock_code and s.get("analysis_date", "") < trade_date]
     if not prev:
         return None
     # 按日期降序，取最近一次
@@ -421,9 +419,7 @@ def save_snapshot(result_path: str) -> dict:
 
     # 检查是否已存在同一股票同一日期的记录（去重）
     existing = [
-        s
-        for s in log_data.get("snapshots", [])
-        if s["stock_code"] == stock_code and s["analysis_date"] == trade_date
+        s for s in log_data.get("snapshots", []) if s["stock_code"] == stock_code and s["analysis_date"] == trade_date
     ]
     if existing:
         # 更新已有记录
@@ -457,9 +453,12 @@ def save_snapshot(result_path: str) -> dict:
     if comparison_info:
         shift_map = {0: "不变", 1: "小幅调升", 2: "大幅调升", -1: "小幅调降", -2: "大幅调降"}
         shift_label = shift_map.get(comparison_info["rating_shift"], f"变动{comparison_info['rating_shift']}")
-        price_str = f"{comparison_info['price_change_pct']:+.1f}%" if comparison_info["price_change_pct"] is not None else "N/A"
+        price_str = (
+            f"{comparison_info['price_change_pct']:+.1f}%" if comparison_info["price_change_pct"] is not None else "N/A"
+        )
         prev_correct_str = (
-            "正确" if comparison_info["prev_correct"] is True
+            "正确"
+            if comparison_info["prev_correct"] is True
             else ("错误" if comparison_info["prev_correct"] is False else "未验证")
         )
         output["comparison"] = (
