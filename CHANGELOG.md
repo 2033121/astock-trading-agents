@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **基金经理决策矩阵（Token 方案策略 2A 收尾）** (`agents/managers/portfolio_manager.py`)：
+  - 新增 `_build_decision_matrix()`：在完整上下文前注入确定性 0-token 结构化矩阵——各信息源（研究员/交易员/三派风控/历史记忆）的看多·中性·看空方向分布、分歧点定位与含目标价/止损/仓位的关键数值行
+  - `_rating_direction()` 五档评级方向粗分类 + 关键词退化；完整原文仍保留供 deep 模型深推理
+  - 新增 `tests/test_pm_matrix.py` 5 项，全套 241 项通过
 - **零依赖 MCP stdio 服务器** (`mcp_server.py`)：暴露 `analyze_stock` / `list_snapshots` / `get_snapshot` / `read_recent_memories` / `review_backtest` 五个工具（新增回测复盘：评级-实际行情对照、T+1/5/10/20 追踪与准确率，可选 Markdown 报告）（完整管线触发 + 快照查询 + 反思记忆读取），实现 MCP 握手子集（initialize/tools/list/tools/call/ping），`tests/test_mcp_server.py` 7 项含 stdio 端到端往返；`save_snapshot.py` 的日志路径支持 `ASTOCK_SNAPSHOT_LOG_PATH` 环境变量覆盖
 - **节点级语义缓存（Token 方案策略 3）** (`llm_clients/semantic_cache.py`)：
   - `SemanticCache`：TTL（默认 60 分钟）+ LRU（256 条）+ 归一化 key（折叠空白/中英标点）精确命中，可选 difflib 相似度惩罚式近邻命中（阈值 0.92）
