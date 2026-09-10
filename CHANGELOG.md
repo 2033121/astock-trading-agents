@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **龙虎榜解读 Skill** (`skills/龙虎榜解读/SKILL.md`)：基于 akshare 实测接口（`stock_lhb_detail_em` / `stock_lhb_stock_detail_em` / `stock_lhb_jgstatistic_em`，列名经 2026-09 实机验证）的龙虎榜→资金信号解读技能：个股榜日席位归因（机构/游资/量化通道）、全市场热力扫描、信号注入 news/sentiment 分析师上下文，含事后披露与"疑似"归因的解读纪律
 - **英文精简版 README** (`README.en.md`)：面向国际读者的 condensed guide（架构/评级术语对照表/快速开始/MCP/Token 优化摘要/测试 CI），中文 README 顶部增加语言切换链接；评级体系中文↔英文对照表收录
 
 ### Changed
