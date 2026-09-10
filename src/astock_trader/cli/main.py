@@ -319,7 +319,7 @@ def analyze(
         try:
             console.print(Markdown(summary_md))
         except (UnicodeEncodeError, Exception):
-            console.print(f"[dim]（终端编码不支持完整报告，请查看保存的结果文件）[/dim]")
+            console.print("[dim]（终端编码不支持完整报告，请查看保存的结果文件）[/dim]")
 
     # ── Save output ───────────────────────────────────────────
     output_path = output

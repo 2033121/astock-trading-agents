@@ -25,9 +25,9 @@ def get_macro_assessment(
         return "[INFO] 暂无月度宏观评估报告。请先运行 generate_macro_assessment.py 生成报告。"
 
     try:
-        with open(MACRO_PATH, "r", encoding="utf-8") as f:
+        with open(MACRO_PATH, encoding="utf-8") as f:
             data = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         return f"[ERROR] 读取宏观评估文件失败: {e}"
 
     # 检查是否过期

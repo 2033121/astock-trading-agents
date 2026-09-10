@@ -11,7 +11,6 @@ from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 from astock_trader.agents.utils.fundamental_data_tools import (
     get_balance_sheet,
     get_cashflow,
@@ -22,6 +21,7 @@ from astock_trader.agents.utils.industry_chain_tools import (
     get_industry_chain,
     get_industry_peers,
 )
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 
 
 def create_fundamentals_analyst(llm: Any) -> Callable:

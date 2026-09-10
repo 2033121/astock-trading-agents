@@ -22,29 +22,65 @@ logger = logging.getLogger(__name__)
 # Thresholds
 # ---------------------------------------------------------------------------
 
-_REPORT_SMALL_THRESHOLD = 1500      # ~375 tokens — below this, skip trimming
-_DEBATE_SMALL_THRESHOLD = 2000      # Debate history threshold
-_MAX_PM_SECTIONS = 6                # Max sections kept for Portfolio Manager
-_MAX_RISK_SECTIONS = 5              # Max sections kept for risk analysts
-_MAX_RESEARCHER_SECTIONS = 8        # Max sections kept for researchers
-_RESEARCHER_PROSE_LIMIT = 800       # long prose bodies are digested (2A) for researchers
-_NUMERIC_LINE = re.compile(r"[-‑−]?\d[.,\d]*\s*(?:%|％|亿元|万亿|倍|元|亿|个|家|年期|bps|BP)|BREAK-EVEN|ROE|ROA|EPS|PE\b|PB\b")
+_REPORT_SMALL_THRESHOLD = 1500  # ~375 tokens — below this, skip trimming
+_DEBATE_SMALL_THRESHOLD = 2000  # Debate history threshold
+_MAX_PM_SECTIONS = 6  # Max sections kept for Portfolio Manager
+_MAX_RISK_SECTIONS = 5  # Max sections kept for risk analysts
+_MAX_RESEARCHER_SECTIONS = 8  # Max sections kept for researchers
+_RESEARCHER_PROSE_LIMIT = 800  # long prose bodies are digested (2A) for researchers
+_NUMERIC_LINE = re.compile(
+    r"[-‑−]?\d[.,\d]*\s*(?:%|％|亿元|万亿|倍|元|亿|个|家|年期|bps|BP)|BREAK-EVEN|ROE|ROA|EPS|PE\b|PB\b"
+)
 
 # Keywords that signal important content for different roles
 _PM_KEYWORDS = [
-    "评级", "风险", "估值", "结论", "建议", "目标价", "止损",
-    "核心", "关键", "总结", "最终", "综合",
+    "评级",
+    "风险",
+    "估值",
+    "结论",
+    "建议",
+    "目标价",
+    "止损",
+    "核心",
+    "关键",
+    "总结",
+    "最终",
+    "综合",
 ]
 
 _RISK_KEYWORDS = [
-    "风险", "下行", "亏损", "止损", "波动", "不确定", "警惕",
-    "高估", "泡沫", "压力", "负债", "现金流", "违约",
-    "回撤", "破位", "减持", "利空", "黑天鹅",
+    "风险",
+    "下行",
+    "亏损",
+    "止损",
+    "波动",
+    "不确定",
+    "警惕",
+    "高估",
+    "泡沫",
+    "压力",
+    "负债",
+    "现金流",
+    "违约",
+    "回撤",
+    "破位",
+    "减持",
+    "利空",
+    "黑天鹅",
 ]
 
 _RESEARCHER_KEYWORDS = [
-    "逻辑", "论据", "证据", "数据", "增长", "趋势",
-    "竞争", "壁垒", "护城河", "催化剂", "预期",
+    "逻辑",
+    "论据",
+    "证据",
+    "数据",
+    "增长",
+    "趋势",
+    "竞争",
+    "壁垒",
+    "护城河",
+    "催化剂",
+    "预期",
 ]
 
 
@@ -103,11 +139,11 @@ def _is_structured_line(line: str) -> bool:
     stripped = line.lstrip()
     if not stripped:
         return True
-    if re.match(r"^#{1,6}\s", stripped):          # markdown heading
+    if re.match(r"^#{1,6}\s", stripped):  # markdown heading
         return True
     if re.match(r"^([-*•·]|\d+[.、)．])\s", stripped):  # bullet / ordered list
         return True
-    if _NUMERIC_LINE.search(stripped):            # quantitative evidence
+    if _NUMERIC_LINE.search(stripped):  # quantitative evidence
         return True
     return False
 
@@ -286,9 +322,7 @@ def slim_gathered_reports(
         return "（暂无分析报告）"
 
     # Route to appropriate slimming function
-    if not enable:
-        slimmed = raw_reports
-    elif target_node == "trader":
+    if not enable or target_node == "trader":
         slimmed = raw_reports
     elif target_node == "portfolio_manager":
         slimmed = slim_for_portfolio_manager(raw_reports)
@@ -355,10 +389,7 @@ def _slim_reports(
             continue
 
         # Score and rank sections
-        scored = [
-            (_score_section(h, b, keywords), h, b)
-            for h, b in sections
-        ]
+        scored = [(_score_section(h, b, keywords), h, b) for h, b in sections]
         scored.sort(key=lambda x: x[0], reverse=True)
 
         # Always include conclusion-like sections
@@ -392,7 +423,11 @@ def _slim_reports(
         if compression == "light" and len(result) > len(text) * 0.6:
             head_parts = []
             for h, b in _split_report_into_sections(result):
-                head_parts.append(f"{h}\n{_compress_prose(b, _RESEARCHER_PROSE_LIMIT)}" if h else _compress_prose(b, _RESEARCHER_PROSE_LIMIT))
+                head_parts.append(
+                    f"{h}\n{_compress_prose(b, _RESEARCHER_PROSE_LIMIT)}"
+                    if h
+                    else _compress_prose(b, _RESEARCHER_PROSE_LIMIT)
+                )
             candidate = "\n\n".join(head_parts)
             if len(candidate) < len(result):
                 result = candidate
@@ -404,7 +439,10 @@ def _slim_reports(
     if saved > 0:
         logger.info(
             "Context slimming (%s): %d -> %d chars (saved %d, %.1f%%)",
-            compression, total_original, total_slimmed, saved,
+            compression,
+            total_original,
+            total_slimmed,
+            saved,
             saved / max(total_original, 1) * 100,
         )
 

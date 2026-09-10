@@ -11,13 +11,13 @@ from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
+from astock_trader.agents.utils.macro_tools import get_macro_assessment
 from astock_trader.agents.utils.news_data_tools import (
     get_global_news,
     get_insider_transactions,
     get_news,
 )
-from astock_trader.agents.utils.macro_tools import get_macro_assessment
+from astock_trader.agents.utils.prompt_prefix import SYSTEM_PREFIX
 
 
 def create_news_analyst(llm: Any) -> Callable:

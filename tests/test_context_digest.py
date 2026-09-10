@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from astock_trader.graph.context_slimmer import (
-    _compress_prose,
     _RESEARCHER_PROSE_LIMIT,
+    _compress_prose,
     slim_for_researchers,
     slim_gathered_reports,
 )

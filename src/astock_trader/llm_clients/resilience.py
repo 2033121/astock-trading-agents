@@ -16,8 +16,8 @@ import time
 from typing import Any
 
 from tenacity import (
-    Retrying,
     RetryCallState,
+    Retrying,
     retry_if_exception,
     stop_after_attempt,
     wait_exponential,
@@ -30,8 +30,8 @@ logger = logging.getLogger("astock_trader.llm_clients.resilience")
 # ---------------------------------------------------------------------------
 
 # 可通过 default_config 或环境变量覆盖
-_ENABLE_HEADROOM: bool = False       # 默认关闭，需主动开启
-_HEADROOM_MIN_TOKENS: int = 500      # 少于该 token 数不压缩（小消息没必要）
+_ENABLE_HEADROOM: bool = False  # 默认关闭，需主动开启
+_HEADROOM_MIN_TOKENS: int = 500  # 少于该 token 数不压缩（小消息没必要）
 _HEADROOM_LOGGER = logging.getLogger("astock_trader.llm_clients.headroom")
 
 
@@ -82,7 +82,9 @@ def _compress_messages(messages: list, agent_name: str) -> list:
     if est_tokens < _HEADROOM_MIN_TOKENS:
         _HEADROOM_LOGGER.debug(
             "[%s] Skipping headroom: est. %d tokens < min %d",
-            agent_name, est_tokens, _HEADROOM_MIN_TOKENS,
+            agent_name,
+            est_tokens,
+            _HEADROOM_MIN_TOKENS,
         )
         return messages
 
@@ -100,19 +102,24 @@ def _compress_messages(messages: list, agent_name: str) -> list:
         if saved > 0:
             _HEADROOM_LOGGER.info(
                 "[%s] Headroom compressed: saved ~%d tokens (ratio: %.2f)",
-                agent_name, saved, ratio,
+                agent_name,
+                saved,
+                ratio,
             )
         else:
             _HEADROOM_LOGGER.debug(
                 "[%s] Headroom: no compression gain (est. %d tokens)",
-                agent_name, est_tokens,
+                agent_name,
+                est_tokens,
             )
 
         return compressed
     except Exception as exc:
         _HEADROOM_LOGGER.warning(
             "[%s] Headroom compression failed (%s: %s), using original messages",
-            agent_name, type(exc).__name__, exc,
+            agent_name,
+            type(exc).__name__,
+            exc,
         )
         return messages
 
@@ -122,7 +129,7 @@ def _compress_messages(messages: list, agent_name: str) -> list:
 # ---------------------------------------------------------------------------
 
 
-class CircuitBreakerOpen(Exception):
+class CircuitBreakerOpen(Exception):  # noqa: N818
     """熔断器处于 OPEN 状态时抛出，表示当前不应发起请求。
 
     Attributes
@@ -136,10 +143,7 @@ class CircuitBreakerOpen(Exception):
     def __init__(self, agent_name: str, remaining_cooldown: float) -> None:
         self.agent_name = agent_name
         self.remaining_cooldown = remaining_cooldown
-        super().__init__(
-            f"Circuit breaker OPEN for {agent_name!r}, "
-            f"retry after {remaining_cooldown:.1f}s"
-        )
+        super().__init__(f"Circuit breaker OPEN for {agent_name!r}, retry after {remaining_cooldown:.1f}s")
 
 
 # ---------------------------------------------------------------------------
@@ -147,26 +151,28 @@ class CircuitBreakerOpen(Exception):
 # ---------------------------------------------------------------------------
 
 # Class names considered retryable, matched against the MRO chain.
-_RETRYABLE_NAMES: frozenset[str] = frozenset({
-    # openai SDK
-    "APIError",
-    "RateLimitError",
-    "APITimeoutError",
-    "APIConnectionError",
-    "InternalServerError",
-    "ServiceUnavailableError",
-    # langchain
-    "OutputParserException",
-    # stdlib
-    "ConnectionError",
-    "TimeoutError",
-    "TimeoutException",
-    # httpx
-    "ConnectError",
-    "ReadTimeout",
-    "WriteTimeout",
-    "PoolTimeout",
-})
+_RETRYABLE_NAMES: frozenset[str] = frozenset(
+    {
+        # openai SDK
+        "APIError",
+        "RateLimitError",
+        "APITimeoutError",
+        "APIConnectionError",
+        "InternalServerError",
+        "ServiceUnavailableError",
+        # langchain
+        "OutputParserException",
+        # stdlib
+        "ConnectionError",
+        "TimeoutError",
+        "TimeoutException",
+        # httpx
+        "ConnectError",
+        "ReadTimeout",
+        "WriteTimeout",
+        "PoolTimeout",
+    }
+)
 
 # Substrings checked against ``str(exc)`` (lower-cased).
 _RETRYABLE_SUBSTRINGS: tuple[str, ...] = (
@@ -358,9 +364,7 @@ def safe_invoke(
         reraise=True,
     ):
         with attempt:
-            logger.debug(
-                "[%s] Invoking LLM (est. ~%d tokens)", agent_name, est_tokens
-            )
+            logger.debug("[%s] Invoking LLM (est. ~%d tokens)", agent_name, est_tokens)
             response = llm.invoke(compressed_msgs)
 
     # If we reach here, the call succeeded.

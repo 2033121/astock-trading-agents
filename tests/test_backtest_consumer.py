@@ -1,11 +1,7 @@
 """Tests for BacktestFeedbackConsumer module."""
 
 import json
-import os
-import tempfile
 from datetime import datetime, timedelta
-
-import pytest
 
 from astock_trader.agents.utils.backtest_consumer import BacktestFeedbackConsumer
 

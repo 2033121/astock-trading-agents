@@ -25,7 +25,6 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -424,7 +423,7 @@ class MarketMemory:
                     self._tfidf_index = pickle.load(f)
             records_path = load_dir / "all_records.json"
             if records_path.is_file():
-                with open(records_path, "r", encoding="utf-8") as f:
+                with open(records_path, encoding="utf-8") as f:
                     data = json.load(f)
                 self._all_records = [
                     AnalysisRecord(
@@ -438,7 +437,7 @@ class MarketMemory:
 
         texts_path = load_dir / "analysis_texts.json"
         if texts_path.is_file():
-            with open(texts_path, "r", encoding="utf-8") as f:
+            with open(texts_path, encoding="utf-8") as f:
                 self._analysis_texts = json.load(f)
 
     @property
