@@ -352,6 +352,7 @@ class GraphSetup:
         invoker: ResilientInvoker | None = None,
         context_slimming: bool = True,
         backtest_consumer: Any | None = None,
+        semantic_cache: Any | None = None,
     ) -> None:
         self.deep_llm = deep_thinking_llm
         # Backward compat: heavy falls back to deep, standard falls back to deep
@@ -365,6 +366,7 @@ class GraphSetup:
         self.invoker = invoker or ResilientInvoker()
         self.context_slimming = context_slimming
         self.backtest_consumer = backtest_consumer
+        self.semantic_cache = semantic_cache
 
     # ────────────────────────────────────────────────────────────
     #  Public entry point
@@ -527,15 +529,27 @@ class GraphSetup:
 
         Returns the response content string.  Falls back to raw invoke
         if the invoker raises CircuitBreakerOpen (logged as error).
+        When a semantic cache is attached (Token strategy 3, off by
+        default), repeated identical/near-identical prompts for the same
+        agent return the cached response within the TTL window.
         """
         from astock_trader.llm_clients.resilience import CircuitBreakerOpen
+        from astock_trader.llm_clients.semantic_cache import cached_invoke
+
+        if self.semantic_cache is not None:
+            model_name = str(
+                getattr(llm, "model_name", None)
+                or getattr(getattr(llm, "model", None), "model_name", "")
+                or getattr(getattr(llm, "model", None), "model", "")
+                or ""
+            )
+            return cached_invoke(llm, messages, agent_name, self.semantic_cache, model_name)
 
         try:
             return self.invoker.invoke(llm, messages, agent_name)
         except CircuitBreakerOpen as exc:
             logger.error(
-                "[%s] Circuit breaker open (%.1fs remaining). "
-                "Falling back to raw invoke.",
+                "[%s] Circuit breaker open (%.1fs remaining). Falling back to raw invoke.",
                 agent_name,
                 exc.remaining_cooldown,
             )
@@ -551,6 +565,7 @@ class GraphSetup:
         """
         if self.context_slimming:
             from astock_trader.graph.context_slimmer import slim_gathered_reports
+
             return slim_gathered_reports(state, target_node, enable=True)
         return self._gather_reports(state)
 
@@ -613,9 +628,9 @@ class GraphSetup:
             human_msg += "请给出你的看多论据:"
 
             response_msgs = [
-                    SystemMessage(content=system_msg),
-                    ("human", human_msg),
-                ]
+                SystemMessage(content=system_msg),
+                ("human", human_msg),
+            ]
             content = self._safe_invoke(heavy_llm, response_msgs, "Bull Researcher")
 
             return {
@@ -663,9 +678,9 @@ class GraphSetup:
             human_msg += "请给出你的看空论据:"
 
             response_msgs = [
-                    SystemMessage(content=system_msg),
-                    ("human", human_msg),
-                ]
+                SystemMessage(content=system_msg),
+                ("human", human_msg),
+            ]
             content = self._safe_invoke(heavy_llm, response_msgs, "Bear Researcher")
 
             return {
@@ -713,10 +728,14 @@ class GraphSetup:
                 human_msg += f"## 回测校准\n{bt_fb}\n\n"
             human_msg += "请给出你的综合投资方案:"
 
-            plan = self._safe_invoke(standard_llm, [
+            plan = self._safe_invoke(
+                standard_llm,
+                [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ], "Research Manager")
+                ],
+                "Research Manager",
+            )
 
             return {
                 "investment_plan": plan,
@@ -766,10 +785,14 @@ class GraphSetup:
                 "请制定具体交易计划:"
             )
 
-            trader_plan = self._safe_invoke(standard_llm, [
+            trader_plan = self._safe_invoke(
+                standard_llm,
+                [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ], "Trader")
+                ],
+                "Trader",
+            )
 
             return {"trader_investment_plan": trader_plan}
 
@@ -824,10 +847,14 @@ class GraphSetup:
                 human_msg += f"## 回测校准\n{bt_fb}\n\n"
             human_msg += "请给出你的激进派风控评估:"
 
-            content = self._safe_invoke(standard_llm, [
+            content = self._safe_invoke(
+                standard_llm,
+                [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ], "Aggressive Analyst")
+                ],
+                "Aggressive Analyst",
+            )
 
             return {
                 "risk_debate_state": {
@@ -875,10 +902,14 @@ class GraphSetup:
                 human_msg += f"## 回测校准\n{bt_fb}\n\n"
             human_msg += "请给出你的保守派风控评估:"
 
-            content = self._safe_invoke(standard_llm, [
+            content = self._safe_invoke(
+                standard_llm,
+                [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ], "Conservative Analyst")
+                ],
+                "Conservative Analyst",
+            )
 
             return {
                 "risk_debate_state": {
@@ -926,10 +957,14 @@ class GraphSetup:
                 human_msg += f"## 回测校准\n{bt_fb}\n\n"
             human_msg += "请给出你的中性派风控评估:"
 
-            content = self._safe_invoke(standard_llm, [
+            content = self._safe_invoke(
+                standard_llm,
+                [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ], "Neutral Analyst")
+                ],
+                "Neutral Analyst",
+            )
 
             return {
                 "risk_debate_state": {
@@ -988,10 +1023,14 @@ class GraphSetup:
                 human_msg += f"## 回测校准\n{bt_fb}\n\n"
             human_msg += "请给出你的最终交易决策:"
 
-            decision = self._safe_invoke(deep_llm, [
+            decision = self._safe_invoke(
+                deep_llm,
+                [
                     SystemMessage(content=system_msg),
                     ("human", human_msg),
-                ], "Portfolio Manager")
+                ],
+                "Portfolio Manager",
+            )
 
             return {
                 "final_trade_decision": decision,

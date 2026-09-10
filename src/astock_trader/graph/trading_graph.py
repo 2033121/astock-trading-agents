@@ -100,12 +100,27 @@ class TradingAgentsGraph:
             cb_cooldown=self.config.get("circuit_breaker_cooldown", 30),
         )
 
+        # ── Optional semantic response cache (Token strategy 3) ──
+        # Off by default; per-process only; covers researcher/manager/trader
+        # node calls routed through GraphSetup._safe_invoke.
+        self.semantic_cache = None
+        if self.config.get("enable_semantic_cache", False):
+            from astock_trader.llm_clients.semantic_cache import SemanticCache
+
+            self.semantic_cache = SemanticCache(
+                ttl_minutes=self.config.get("semantic_cache_ttl_minutes", 60),
+                max_entries=self.config.get("semantic_cache_max_entries", 256),
+                similarity_threshold=self.config.get("semantic_cache_similarity_threshold", 0.92),
+            )
+
         # ── Activate Headroom compression (Library mode) ─────
         # Windows 上 ONNX Runtime 不兼容 Kompress int8-wo 模型，自动降级关闭。
         from astock_trader.llm_clients.resilience import configure_headroom
+
         _headroom_enabled = self.config.get("enable_headroom_compression", False)
         if _headroom_enabled:
             import sys as _sys
+
             if _sys.platform == "win32":
                 _logger = logging.getLogger("astock_trader.headroom")
                 _logger.warning(
@@ -158,6 +173,7 @@ class TradingAgentsGraph:
             invoker=self.invoker,
             context_slimming=self.config.get("enable_context_slimming", True),
             backtest_consumer=self.backtest_consumer,
+            semantic_cache=self.semantic_cache,
         )
         self.propagator = Propagator(
             max_recur_limit=self.config.get("max_recur_limit", 100),
@@ -178,6 +194,7 @@ class TradingAgentsGraph:
         if self.config.get("enable_vector_memory", True):
             try:
                 from astock_trader.memory.market_memory import MarketMemory
+
                 mem_dir = self.config.get("vector_memory_dir") or os.path.join(
                     self.config.get("project_dir", os.path.expanduser("~/.astock_trader")),
                     "vector_memory",
@@ -457,7 +474,7 @@ class TradingAgentsGraph:
             for the ``mimo`` provider).  Falls back to the generic resolution
             chain so single-provider setups keep working unchanged.
             """
-            _PROVIDER_KEY_ENV: dict[str, str] = {
+            _PROVIDER_KEY_ENV: dict[str, str] = {  # noqa: N806
                 "deepseek": "DEEPSEEK_API_KEY",
                 "mimo": "MIMO_API_KEY",
                 "qwen": "DASHSCOPE_API_KEY",
@@ -479,20 +496,32 @@ class TradingAgentsGraph:
             return api_key or ""
 
         deep_client = create_llm_client(
-            provider=deep_prov, model=deep_model,
-            base_url=deep_url, api_key=_resolve_api_key(deep_prov), temperature=0.3,
+            provider=deep_prov,
+            model=deep_model,
+            base_url=deep_url,
+            api_key=_resolve_api_key(deep_prov),
+            temperature=0.3,
         )
         heavy_client = create_llm_client(
-            provider=heavy_prov, model=heavy_model,
-            base_url=heavy_url, api_key=_resolve_api_key(heavy_prov), temperature=0.3,
+            provider=heavy_prov,
+            model=heavy_model,
+            base_url=heavy_url,
+            api_key=_resolve_api_key(heavy_prov),
+            temperature=0.3,
         )
         standard_client = create_llm_client(
-            provider=std_prov, model=standard_model,
-            base_url=std_url, api_key=_resolve_api_key(std_prov), temperature=0.3,
+            provider=std_prov,
+            model=standard_model,
+            base_url=std_url,
+            api_key=_resolve_api_key(std_prov),
+            temperature=0.3,
         )
         quick_client = create_llm_client(
-            provider=quick_prov, model=quick_model,
-            base_url=quick_url, api_key=_resolve_api_key(quick_prov), temperature=0.3,
+            provider=quick_prov,
+            model=quick_model,
+            base_url=quick_url,
+            api_key=_resolve_api_key(quick_prov),
+            temperature=0.3,
         )
 
         deep_llm = deep_client.get_llm()
@@ -502,10 +531,14 @@ class TradingAgentsGraph:
 
         logger.info(
             "LLMs created (4-tier): deep=%s@%s, heavy=%s@%s, standard=%s@%s, quick=%s@%s",
-            deep_model, deep_prov,
-            heavy_model, heavy_prov,
-            standard_model, std_prov,
-            quick_model, quick_prov,
+            deep_model,
+            deep_prov,
+            heavy_model,
+            heavy_prov,
+            standard_model,
+            std_prov,
+            quick_model,
+            quick_prov,
         )
         return deep_llm, heavy_llm, standard_llm, quick_llm
 
@@ -577,8 +610,10 @@ class TradingAgentsGraph:
         try:
             parts = []
             for field in [
-                "market_report", "sentiment_report",
-                "news_report", "fundamentals_report",
+                "market_report",
+                "sentiment_report",
+                "news_report",
+                "fundamentals_report",
             ]:
                 value = state.get(field, "")
                 if value:
@@ -664,20 +699,25 @@ class TradingAgentsGraph:
                         alpha_return=alpha,
                     )
 
-                    updates.append({
-                        "ticker": ticker,
-                        "trade_date": trade_date,
-                        "reflection": {
-                            "outcome": f"5日收益 {raw_ret:+.1%}, 超额 {alpha:+.1%}",
-                            "raw_return": round(raw_ret, 4),
-                            "alpha_return": round(alpha, 4),
-                            "lesson": reflection_text,
-                            "resolved_date": datetime.now().strftime("%Y-%m-%d"),
-                        },
-                    })
+                    updates.append(
+                        {
+                            "ticker": ticker,
+                            "trade_date": trade_date,
+                            "reflection": {
+                                "outcome": f"5日收益 {raw_ret:+.1%}, 超额 {alpha:+.1%}",
+                                "raw_return": round(raw_ret, 4),
+                                "alpha_return": round(alpha, 4),
+                                "lesson": reflection_text,
+                                "resolved_date": datetime.now().strftime("%Y-%m-%d"),
+                            },
+                        }
+                    )
                     logger.info(
                         "Resolved %s@%s: raw=%.1f%%, alpha=%.1f%%",
-                        ticker, trade_date, raw_ret * 100, alpha * 100,
+                        ticker,
+                        trade_date,
+                        raw_ret * 100,
+                        alpha * 100,
                     )
                 except Exception as exc:
                     logger.warning("Failed to resolve entry %s@%s: %s", ticker, trade_date, exc)
@@ -702,16 +742,19 @@ class TradingAgentsGraph:
         Returns ``None`` if data is unavailable or insufficient.
         """
         try:
-            import akshare as ak
             from datetime import datetime, timedelta
+
+            import akshare as ak
 
             dt = datetime.strptime(trade_date, "%Y-%m-%d")
             start_str = dt.strftime("%Y%m%d")
             end_str = (dt + timedelta(days=days + 10)).strftime("%Y%m%d")
 
             df = ak.stock_zh_a_hist(
-                symbol=ticker, period="daily",
-                start_date=start_str, end_date=end_str,
+                symbol=ticker,
+                period="daily",
+                start_date=start_str,
+                end_date=end_str,
                 adjust="qfq",
             )
             if df is None or df.empty or len(df) < 2:
@@ -748,16 +791,19 @@ class TradingAgentsGraph:
         Returns ``None`` if data is unavailable.
         """
         try:
-            import akshare as ak
             from datetime import datetime, timedelta
+
+            import akshare as ak
 
             dt = datetime.strptime(trade_date, "%Y-%m-%d")
             start_str = dt.strftime("%Y%m%d")
             end_str = (dt + timedelta(days=days + 10)).strftime("%Y%m%d")
 
             df = ak.index_zh_a_hist(
-                symbol="000300", period="daily",
-                start_date=start_str, end_date=end_str,
+                symbol="000300",
+                period="daily",
+                start_date=start_str,
+                end_date=end_str,
             )
             if df is None or df.empty or len(df) < 2:
                 return None

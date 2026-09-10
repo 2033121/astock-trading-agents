@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **节点级语义缓存（Token 方案策略 3）** (`llm_clients/semantic_cache.py`)：
+  - `SemanticCache`：TTL（默认 60 分钟）+ LRU（256 条）+ 归一化 key（折叠空白/中英标点）精确命中，可选 difflib 相似度惩罚式近邻命中（阈值 0.92）
+  - 挂载于 `GraphSetup._safe_invoke`（研究员/经理/交易员节点收口），默认关闭（`enable_semantic_cache`），覆盖"同股同日重复分析"场景
+  - 新增 `tests/test_semantic_cache.py` 8 项测试；仓库全量 ruff check/format 清零（含历史遗留 F541/UP015/I001 等 18 处自动修复），全套 224 项通过
 - **研究员报告确定性摘要（Token 方案策略 2A）** (`graph/context_slimmer.py`)：
   - 新增 `_compress_prose()` / `_is_structured_line()`：对超大报告做 0-token 结构化摘要——保留标题、列表行与含数值证据行（`%`/`亿`/`ROE`/`EPS` 等），长段落仅保留首句
   - 接入 `slim_for_researchers` 的 light 压缩路径（当初步压缩后仍占原文 >60% 时启用），峰值压缩目标从 ~20-30% 提升到 ~30-50%

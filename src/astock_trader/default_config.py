@@ -22,6 +22,12 @@ DEFAULT_CONFIG = {
     "llm_retry_max_delay": 60,          # 指数退避最大延迟（秒）
     "circuit_breaker_threshold": 5,     # 熔断器连续失败阈值
     "circuit_breaker_cooldown": 30,     # 熔断器冷却窗口（秒）
+    # ── 语义缓存（Token 方案策略 3）────────────────────────────
+    # 默认关闭（质量优先）；对同股同日重复分析的节点调用做响应级缓存。
+    "enable_semantic_cache": False,     # 总开关（TTL/LRU/相似度见下）
+    "semantic_cache_ttl_minutes": 60,   # 缓存有效期（分钟）
+    "semantic_cache_max_entries": 256,  # LRU 上限（条）
+    "semantic_cache_similarity_threshold": 0.92,  # 近似命中阈值（difflib）
     # ── 上下文瘦身 ────────────────────────────────────────────
     "enable_context_slimming": True,    # 按目标节点裁剪报告，降低 token 消耗 ~25%
     # ── Headroom Token 压缩 ───────────────────────────────────
