@@ -27,6 +27,8 @@ _DEBATE_SMALL_THRESHOLD = 2000      # Debate history threshold
 _MAX_PM_SECTIONS = 6                # Max sections kept for Portfolio Manager
 _MAX_RISK_SECTIONS = 5              # Max sections kept for risk analysts
 _MAX_RESEARCHER_SECTIONS = 8        # Max sections kept for researchers
+_RESEARCHER_PROSE_LIMIT = 800       # long prose bodies are digested (2A) for researchers
+_NUMERIC_LINE = re.compile(r"[-‑−]?\d[.,\d]*\s*(?:%|％|亿元|万亿|倍|元|亿|个|家|年期|bps|BP)|BREAK-EVEN|ROE|ROA|EPS|PE\b|PB\b")
 
 # Keywords that signal important content for different roles
 _PM_KEYWORDS = [
@@ -94,6 +96,55 @@ def _score_section(heading: str, body: str, keywords: list[str]) -> float:
             break
 
     return score
+
+
+def _is_structured_line(line: str) -> bool:
+    """True for headings, bullets or lines that carry numeric evidence."""
+    stripped = line.lstrip()
+    if not stripped:
+        return True
+    if re.match(r"^#{1,6}\s", stripped):          # markdown heading
+        return True
+    if re.match(r"^([-*•·]|\d+[.、)．])\s", stripped):  # bullet / ordered list
+        return True
+    if _NUMERIC_LINE.search(stripped):            # quantitative evidence
+        return True
+    return False
+
+
+def _compress_prose(body: str, threshold: int) -> str:
+    """Digest a long section body deterministically (0-token, Token strategy 2A).
+
+    Keeps: every heading / bullet / numeric line.  Prose paragraphs are
+    reduced to their first sentence when the whole body exceeds *threshold*.
+    Structured sections are returned untouched so short bodies gain nothing.
+
+    Parameters
+    ----------
+    body : str
+        Section body text.
+    threshold : int
+        Only bodies longer than this many characters are compressed.
+
+    Returns
+    -------
+    str
+        The (possibly compressed) body.
+    """
+    if len(body) <= threshold:
+        return body
+
+    kept: list[str] = []
+    for para in re.split(r"\n{2,}", body):
+        if _is_structured_line(para.split("\n", 1)[0]):
+            # paragraph starts structured: keep as-is (already compact)
+            kept.append(para)
+            continue
+        # pure prose: first sentence only
+        sentence = re.split(r"(?<=[。！？!?])", para.strip(), maxsplit=1)[0]
+        if sentence:
+            kept.append(sentence if sentence.endswith(("。", "！", "？", "!", "?")) else sentence + "。")
+    return "\n\n".join(kept)
 
 
 def _extract_conclusion_section(report: str) -> str:
@@ -175,8 +226,9 @@ def slim_for_researchers(
 ) -> dict[str, str]:
     """Slim reports for Bull/Bear Researcher and Research Manager nodes.
 
-    Keeps: evidence, data points, argumentation material.
-    Target: ~20-30% compression.
+    Keeps: evidence, data points, argumentation material.  Long prose is
+    additionally digested to a structured summary (headings / bullets /
+    numeric lines), 0 extra LLM tokens.  Target: ~30-50% compression.
     """
     if not enable:
         return reports
@@ -333,6 +385,17 @@ def _slim_reports(
             newline_pos = result.rfind("\n", 0, cut_point)
             if newline_pos > cut_point * 0.5:
                 result = result[:newline_pos]
+
+        # For light compression (researchers), digest long prose blocks into a
+        # structured summary, so researchers receive the evidence (bullets,
+        # numbers) without paragraph filler (Token strategy 2A).
+        if compression == "light" and len(result) > len(text) * 0.6:
+            head_parts = []
+            for h, b in _split_report_into_sections(result):
+                head_parts.append(f"{h}\n{_compress_prose(b, _RESEARCHER_PROSE_LIMIT)}" if h else _compress_prose(b, _RESEARCHER_PROSE_LIMIT))
+            candidate = "\n\n".join(head_parts)
+            if len(candidate) < len(result):
+                result = candidate
 
         slimmed[name] = result
         total_slimmed += len(result)
