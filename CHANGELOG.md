@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **文档站（GitHub Pages）** (`mkdocs.yml` + `docs/index.md` + `.github/workflows/docs.yml`)：mkdocs-material 主题，导航含中英 README/Token 方案/路线图；推送 master 涉及 README/docs 时自动构建并部署 Pages，`mkdocs build --strict` 本地验证通过；构建产物与同步副本已加入 .gitignore
 - **行业对比解读 Skill** (`skills/行业对比解读/SKILL.md`)：基于仓库自带 get_industry_peers/get_industry_chain/get_fundamentals 工具链的相对估值横截面——行业中位 PE/PB、目标分位数定位（含剔除负 PE 的显式规则）、多业务板块分别对标、块效应提示，及"分位数≠估值结论需与竞争格局互证"的解读纪律
 - **龙虎榜解读 Skill** (`skills/龙虎榜解读/SKILL.md`)：基于 akshare 实测接口（`stock_lhb_detail_em` / `stock_lhb_stock_detail_em` / `stock_lhb_jgstatistic_em`，列名经 2026-09 实机验证）的龙虎榜→资金信号解读技能：个股榜日席位归因（机构/游资/量化通道）、全市场热力扫描、信号注入 news/sentiment 分析师上下文，含事后披露与"疑似"归因的解读纪律
 - **英文精简版 README** (`README.en.md`)：面向国际读者的 condensed guide（架构/评级术语对照表/快速开始/MCP/Token 优化摘要/测试 CI），中文 README 顶部增加语言切换链接；评级体系中文↔英文对照表收录
