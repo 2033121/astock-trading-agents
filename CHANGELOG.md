@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **零依赖 MCP stdio 服务器** (`mcp_server.py`)：暴露 `analyze_stock` / `list_snapshots` / `get_snapshot` / `read_recent_memories` 四个工具（完整管线触发 + 快照查询 + 反思记忆读取），实现 MCP 握手子集（initialize/tools/list/tools/call/ping），`tests/test_mcp_server.py` 7 项含 stdio 端到端往返；`save_snapshot.py` 的日志路径支持 `ASTOCK_SNAPSHOT_LOG_PATH` 环境变量覆盖
 - **节点级语义缓存（Token 方案策略 3）** (`llm_clients/semantic_cache.py`)：
   - `SemanticCache`：TTL（默认 60 分钟）+ LRU（256 条）+ 归一化 key（折叠空白/中英标点）精确命中，可选 difflib 相似度惩罚式近邻命中（阈值 0.92）
   - 挂载于 `GraphSetup._safe_invoke`（研究员/经理/交易员节点收口），默认关闭（`enable_semantic_cache`），覆盖"同股同日重复分析"场景

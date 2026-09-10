@@ -16,7 +16,7 @@ import sys
 import os
 from datetime import datetime
 
-LOG_PATH = r"D:\stock\trading-agents\analysis_log.json"
+LOG_PATH = os.environ.get("ASTOCK_SNAPSHOT_LOG_PATH", r"D:\stock\trading-agents\analysis_log.json")
 
 # 股票名称映射（常用，可通过 akshare 动态获取）
 STOCK_NAMES = {

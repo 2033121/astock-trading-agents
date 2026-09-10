@@ -354,6 +354,34 @@ mem.batch_update_with_outcomes([
 ])
 ```
 
+## MCP Server
+
+仓库根目录提供**零依赖**的 MCP stdio 服务器（`mcp_server.py`），可在任意 MCP 主机
+（Claude Desktop 等）中把本框架作为工具集调用：
+
+| 工具 | 说明 |
+|------|------|
+| `analyze_stock` | 对一只A股运行完整 15-agent 管线，返回最终评级与摘要 |
+| `list_snapshots` | 列出最近分析快照（含 T+1/T+5/T+10/T+20 追踪收益） |
+| `get_snapshot` | 一只股票的最新快照 + 历史评级时间线 + 累计价格变化 |
+| `read_recent_memories` | 读取最近的交易决策记忆（反思闭环结论） |
+
+客户端配置示例（JSON）：
+
+```json
+{
+  "mcpServers": {
+    "astock-trading-agents": {
+      "command": "python",
+      "args": ["D:/Qoder/astock-trading-agents/mcp_server.py"]
+    }
+  }
+}
+```
+
+环境变量：`ASTOCK_SNAPSHOT_LOG_PATH`（快照日志路径，默认 scripts/save_snapshot.py 内置路径）、
+`ASTOCK_MEMORY_LOG_PATH`（决策记忆 markdown）、`ASTOCK_MCP_CLI_TIMEOUT`（analyze 工具超时秒数，默认 1200）。
+
 ## QoderWork 集成
 
 本系统可作为 QoderWork 插件使用，在 QoderWork 中直接调用分析能力：
