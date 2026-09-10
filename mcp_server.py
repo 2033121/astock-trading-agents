@@ -121,10 +121,17 @@ def read_recent_memories(limit: int = 10) -> dict[str, Any]:
 
 def analyze_stock(symbol: str, date: str | None = None, analysts: str | None = None) -> dict[str, Any]:
     """Run the full pipeline via the CLI and return a compact JSON summary."""
-    cmd = [sys.executable, "-m", "astock_trader.cli", "analyze", symbol, "--date", date, "--quiet", "--output", "-"]
+    cli_snippet = (
+        "import sys; "
+        "from astock_trader.cli.main import app; "
+        "sys.exit(app(standalone_mode=True))"
+    )
+    cmd = [sys.executable, "-c", cli_snippet, "analyze", symbol]
+    if date:
+        cmd += ["--date", date]
     if analysts:
         cmd += ["--analysts", analysts]
-    cmd = [c for c in cmd if c is not None]
+    cmd += ["--quiet", "--output", "-"]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS, check=False)
     except subprocess.TimeoutExpired:
