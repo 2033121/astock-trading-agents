@@ -100,3 +100,27 @@ pytest tests/test_agents.py
 | `MX_APIKEY` | EastMoney MX news data |
 | `MIMO_API_KEY` | Xiaomi MiMo LLM API key |
 | `ASTOCK_REPORT_DIR` | HTML report output directory |
+
+## Skills (agent-invocable workflows)
+
+Directory `skills/` — each subfolder has a SKILL.md with frontmatter
+(name / description / trigger words). Multi-host installer:
+
+```bash
+./integrations/install.sh [dsh|claude|codex|zcode ...] [--dry-run] [--force]
+```
+
+| Skill | Slug (codex prompt) | Trigger words |
+|-------|---------------------|---------------|
+| 智能分析 | astock-analysis | 分析、股票分析、analyze |
+| 分析历史 | astock-history | 历史、分析历史 |
+| 决策记忆 | astock-memory | 记忆、决策记忆 |
+| 交易配置 | astock-config | 配置、交易配置 |
+| 快照跟踪对比 | astock-snapshot-tracking | 快照对比、评级变化 |
+| 复盘深度分析 | astock-postmortem | 复盘、回测分析 |
+| 龙虎榜解读 | astock-lhb-interpretation | 龙虎榜、席位 |
+| 行业对比解读 | astock-industry-comparison | 行业对比、估值分位 |
+
+Hosts: DSH & Claude Code & zCode load `skills/<dir>` via symlink;
+Codex CLI consumes `~/.codex/prompts/astock-<slug>.md`; any AGENTS.md-based
+host can follow the trigger words and open the referenced SKILL.md directly.

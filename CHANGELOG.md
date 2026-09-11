@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **多宿主插件集成** (`integrations/install.sh` + `docs/README.md`→`integrations/README.md`)：幂等安装器把 `skills/` 注册到 DSH（软链）、Claude Code（软链）、zCode（软链，未装则跳过）、Codex CLI（SKILL.md → `~/.codex/prompts/astock-<slug>.md` slash 命令，中文技能名映射 ascii slug）；AGENTS.md 增补 Skills 触发词表——AGENTS.md 系宿主零安装即可用；支持 `--dry-run/--force`；沙箱实测四宿主注册成功
+
 ## [0.5.0] - 2026-09-10
 
 ### Fixed

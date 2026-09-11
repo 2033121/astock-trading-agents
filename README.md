@@ -369,6 +369,26 @@ mem.batch_update_with_outcomes(
 )
 ```
 
+## 多宿主插件（不止 Qoder）
+
+`skills/` 一次性注册到多种 Agent 宿主（幂等安装器，沙箱实测）：
+
+| 宿主 | 方式 | 目标 |
+|------|------|------|
+| DSH | 软链技能目录（SKILL.md frontmatter 识别） | `~/.dsh/skills/` |
+| Claude Code | 软链技能目录 | `~/.claude/skills/` |
+| zCode | 软链技能目录 | `~/.zcode/skills/` |
+| Codex CLI | SKILL.md → `~/.codex/prompts/astock-<slug>.md` slash 命令 | `~/.codex/prompts/` |
+| Qoder | 原生 `.qoder-plugin/`（保留） | 仓库内 |
+
+```bash
+./integrations/install.sh             # 自动探测并注册全部
+./integrations/install.sh dsh codex --dry-run
+```
+
+细节见 `integrations/README.md`。任何以 `AGENTS.md` 为约定的宿主（Codex/zCode）
+自带技能触发词表；DSH/Claude 装完重启即加载。
+
 ## MCP Server
 
 仓库根目录提供**零依赖**的 MCP stdio 服务器（`mcp_server.py`），可在任意 MCP 主机
