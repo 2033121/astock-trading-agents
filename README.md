@@ -2,6 +2,9 @@
 
 # A股智能决策系统
 
+![CI](https://github.com/2033121/astock-trading-agents/actions/workflows/ci.yml/badge.svg)
+[![Docs](https://github.com/2033121/astock-trading-agents/actions/workflows/docs.yml/badge.svg)](https://2033121.github.io/astock-trading-agents/)
+
 基于 LangGraph 的多Agent辩论式量化交易决策框架，15位AI分析师协作，输出结构化投资评级与可视化分析报告。
 
 > **风险提示**: 本工具仅供研究和辅助决策参考，不构成投资建议。投资有风险，入市需谨慎。
@@ -16,9 +19,12 @@
 - **灵活LLM**: OpenAI兼容接口，支持 DeepSeek/Qwen/GLM/Ollama 等 9 种提供商
 - **生产级容错**: Tenacity 指数退避重试（3次 4s→60s）+ 三态熔断器（5次失败→OPEN→30s冷却），保护所有 LLM 调用
 - **四层模型分配**: Deep/Heavy/Standard/Quick 四级模型分层，按角色复杂度自动路由到最优模型
+- **Token 优化套件** (v0.5): 共享系统提示词前缀缓存（DeepSeek KV 折扣 ~90%+）+ 研究员/基金经理双侧确定性上下文摘要（0 额外 token）+ 可选节点级语义响应缓存（TTL/LRU/近似匹配，默认关闭）
+- **MCP Server** (v0.5): 零依赖 stdio 服务器，把完整分析管线、快照查询、决策记忆与回测复盘暴露给任意 MCP 主机（如 Claude Desktop）
 - **智能上下文瘦身**: 按目标节点裁剪报告内容（PM 保留结论 ~60-70% 压缩），整体节省 ~25% Token 消耗
 - **向量记忆**: 纯 Python TF-IDF bigram 语义检索，分析前注入历史上下文，分析后自动索引持久化
 - **反思闭环**: 跟踪历史预测 → akshare 获取实际收益 → LLM 生成反思教训 → 写回记忆提升未来决策
+- **辩论公平性保证** (v0.5): 多空辩论含最终反驳轮（双方各发言一次后再裁决），路由/接线护栏测试防止回归
 
 ![报告预览](docs/images/demo-report-preview.png)
 
@@ -415,6 +421,25 @@ mem.batch_update_with_outcomes(
 | 决策记忆 | 管理决策记忆日志，支持结算和反思 |
 | 交易配置 | 查看和修改 LLM 模型、数据源等配置参数 |
 | 复盘深度分析 | 回测数据深度分析，生成 per-agent 校准反馈 (v0.4) |
+| 龙虎榜解读 | 龙虎榜席位归因 → 资金信号摘要，可注入 news/sentiment 分析师 (v0.5) |
+| 行业对比解读 | 相对估值横截面：行业中位 PE/PB、分位数定位、多业务板块对标 (v0.5) |
+
+## v0.5 升级亮点
+
+v0.5 围绕 **Token 优化 + 对外能力 + 公平性收口** 三条主线（详见 CHANGELOG 与 `docs/改进路线图.md`）：
+
+| 改进 | 模块 | 效果 |
+|------|------|------|
+| 辩论最终反驳轮 | `graph/conditional_logic.py` | 结算阈值 2N+1，保证裁决前双方论点均获回应；修复"不满轮反转"缺陷 |
+| 共享提示词前缀 | `agents/utils/prompt_prefix.py` | 全部 11 个 LLM 节点统一 `SYSTEM_PREFIX`，命中 provider 前缀缓存（DeepSeek 折扣 ~90%+） |
+| 研究员确定性摘要 | `graph/context_slimmer.py` | 超长报告保留标题/列表/数值证据行、长段只留首句，压缩 ~30-50%（0 额外 token） |
+| 基金经理决策矩阵 | `agents/managers/portfolio_manager.py` | 完整上下文前注入各信息源方向分布与关键数值行，快速定位分歧 |
+| 语义响应缓存 | `llm_clients/semantic_cache.py` | 同股同日重复分析命中缓存（TTL 60min/LRU 256/阈值 0.92），默认关闭稳步启用 |
+| 零依赖 MCP server | `mcp_server.py` | `analyze_stock`/`list_snapshots`/`get_snapshot`/`read_recent_memories`/`review_backtest` 5 工具 |
+| 龙虎榜/行业对比 Skills | `skills/` | 资金信号注入 + 相对估值分位定位（接口均实机验证） |
+| 英文 README | `README.en.md` | 国际读者精简版 + 五档评级中英对照 |
+| 文档站 | `mkdocs.yml` + Pages 工作流 | mkdocs-material，`--strict` 构建零警告（需在 Settings 启用 Pages） |
+| 质量体系 | `.github/workflows/` | ruff 0.16 全仓对齐 + CI 全绿；测试矩阵 151 → 241 项 |
 
 ## v0.4 升级亮点
 
@@ -443,8 +468,11 @@ v0.3 基于 [webnovel-studio](https://github.com/2033121/webnovel-studio) v0.2 �
 | 上下文瘦身 | `graph/context_slimmer.py` | 按节点裁剪报告，PM 压缩 60-70%，整体节省 ~25% Token |
 | 向量记忆 | `memory/market_memory.py` | TF-IDF bigram 语义检索，突破"最近 N 次"上下文限制 |
 | Headroom 集成 | `resilience.py` | Token 压缩层，长 prompt 场景节省 60-95% Token |
+| 提示词前缀缓存 (v0.5) | `agents/utils/prompt_prefix.py` | 11 节点共享 `SYSTEM_PREFIX`，命中 provider KV 前缀缓存 |
+| 语义响应缓存 (v0.5) | `llm_clients/semantic_cache.py` | 默认关闭；`enable_semantic_cache=True` 后同股同日重复分析直接命中 |
+| 报告摘要双通道 (v0.5) | `context_slimmer.py` / `portfolio_manager.py` | 研究员确定性摘要 + PM 决策矩阵，0 额外 token |
 
-所有配置项均可通过 `astock-trader config --set` 或 `default_config.py` 调整。
+所有配置项均可通过 `astock-trader config --set` 或 `default_config.py` 调整。 `astock-trader config --set` 或 `default_config.py` 调整。
 
 ## AI 编辑器适配
 
@@ -485,7 +513,7 @@ v0.3 基于 [webnovel-studio](https://github.com/2033121/webnovel-studio) v0.2 �
 ## 测试
 
 ```bash
-# 运行所有测试（共 185 个）
+# 运行所有测试（共 241 个）
 pytest tests/
 
 # 详细输出
@@ -498,7 +526,12 @@ pytest tests/test_signal_processing.py
 pytest tests/test_memory.py
 pytest tests/test_dataflows.py
 pytest tests/test_agents.py
-pytest tests/test_backtest_consumer.py   # v0.4: 反馈消费 + 衰减测试 (34 tests)
+pytest tests/test_prompt_prefix.py      # v0.5: 提示词前缀接线护栏
+pytest tests/test_semantic_cache.py     # v0.5: 语义响应缓存
+pytest tests/test_pm_matrix.py          # v0.5: 基金经理决策矩阵
+pytest tests/test_context_digest.py     # v0.5: 研究员报告摘要
+pytest tests/test_mcp_server.py         # v0.5: MCP server（含 stdio 端到端）
+pytest tests/test_backtest_consumer.py   # v0.4: 反馈消费 + 衰减测试
 
 # 带覆盖率报告
 pytest tests/ --cov=astock_trader --cov-report=term-missing
@@ -510,6 +543,9 @@ pytest tests/ --cov=astock_trader --cov-report=term-missing
 astock-trading-agents/
 ├── pyproject.toml                  # 项目配置与依赖
 ├── README.md                       # 本文件
+├── README.en.md                    # 英文精简版 (v0.5)
+├── mcp_server.py                   # 零依赖 MCP stdio 服务器 (v0.5)
+├── mkdocs.yml                      # 文档站配置 (v0.5)
 ├── LICENSE                         # MIT 许可证
 ├── skills/                         # QoderWork 插件 Skills
 │   ├── 智能分析/                   # 多Agent分析
@@ -548,6 +584,7 @@ astock-trading-agents/
 │       │   │   ├── conservative_debator.py
 │       │   │   └── neutral_debator.py
 │       │   └── utils/              # Agent 工具与状态
+│       │       ├── prompt_prefix.py # 共享系统提示词前缀 (v0.5)
 │       │       ├── agent_states.py
 │       │       ├── agent_utils.py
 │       │       ├── core_stock_tools.py
@@ -584,7 +621,8 @@ astock-trading-agents/
 │       │   ├── base_client.py      # 基类
 │       │   ├── openai_client.py    # OpenAI 兼容客户端
 │       │   ├── factory.py          # 客户端工厂
-│       │   └── resilience.py       # LLM 容错层（重试 + 熔断 + Headroom）
+│       │   ├── resilience.py       # LLM 容错层（重试 + 熔断 + Headroom）
+│       │   └── semantic_cache.py   # 节点级语义响应缓存 (v0.5)
 │       └── memory/                 # 向量记忆系统
 │           ├── __init__.py
 │           └── market_memory.py   # TF-IDF bigram 语义检索 + 持久化
