@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **智能体进度侧边栏面板** (`graph/progress_recorder.py` + `scripts/agent_panel.py`)：
+  - `NodeProgressRecorder`（LangChain callback）把每个节点 运行中/完成/失败 事件写入 `<symbol>_<date>_progress.jsonl`（`enable_progress_recorder` 默认开，`progress_file`/结果目录可覆盖），`agent_progress` 也通过 `_emit` 供 CLI 回调转发
+  - 适配全部 12 位核心智能体的中文标牌与流水线阶段（AGENT_LABELS），未列出的 ReAct 工具子轮不污染面板
+  - `scripts/agent_panel.py`：零依赖生成自刷新 HTML 面板（2s meta refresh），状态色/耗时/焦点高亮/最终评级；DSH 会话可通过 sidebar 打开实时观察，其他宿主浏览器打开即可
+  - 新增 `tests/test_progress_panel.py` 6 项（含空运行/未知节点过滤/完整时序），全套 247 项通过
+
+### Added
+
 - **多宿主插件集成** (`integrations/install.sh` + `docs/README.md`→`integrations/README.md`)：幂等安装器把 `skills/` 注册到 DSH（软链）、Claude Code（软链）、zCode（软链，未装则跳过）、Codex CLI（SKILL.md → `~/.codex/prompts/astock-<slug>.md` slash 命令，中文技能名映射 ascii slug）；AGENTS.md 增补 Skills 触发词表——AGENTS.md 系宿主零安装即可用；支持 `--dry-run/--force`；沙箱实测四宿主注册成功
 
 ## [0.5.0] - 2026-09-10

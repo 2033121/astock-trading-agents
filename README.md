@@ -369,6 +369,17 @@ mem.batch_update_with_outcomes(
 )
 ```
 
+## 智能体进度面板（侧边栏实时观察）
+
+```bash
+astock-trader analyze 600519 --provider deepseek     # 自动写 <…>_progress.jsonl（可关）
+python3 scripts/agent_panel.py <results_dir>/600519_20260911_progress.jsonl
+```
+
+生成的 `agent_panel.html` 每 2 秒自刷新，按阶段显示 12 位智能体的 运行中/完成/失败、
+耗时与最终评级。DSH 会话用 `sidebar_open` 打开即可实时观察；其他宿主在浏览器打开
+（详见 `integrations/README.md`）。
+
 ## 多宿主插件（不止 Qoder）
 
 `skills/` 一次性注册到多种 Agent 宿主（幂等安装器，沙箱实测）：

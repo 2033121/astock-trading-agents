@@ -16,6 +16,7 @@ Typical usage::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -104,6 +105,7 @@ class TradingAgentsGraph:
         # Off by default; per-process only; covers researcher/manager/trader
         # node calls routed through GraphSetup._safe_invoke.
         self.semantic_cache = None
+        self.progress_recorder = None
         if self.config.get("enable_semantic_cache", False):
             from astock_trader.llm_clients.semantic_cache import SemanticCache
 
@@ -328,6 +330,27 @@ class TradingAgentsGraph:
             except Exception as exc:
                 logger.warning("Failed to set up checkpointer: %s", exc)
 
+        # ── Per-agent progress recorder (sidebar panel feed) ──
+        recorder = None
+        if self.config.get("enable_progress_recorder", True):
+            try:
+                from astock_trader.graph.progress_recorder import (
+                    NodeProgressRecorder,
+                    default_progress_path,
+                    with_callback_config,
+                )
+
+                progress_file = self.config.get("progress_file") or default_progress_path(
+                    self.config.get("results_dir", self.config.get("project_dir", "")),
+                    company_name,
+                    trade_date,
+                )
+                recorder = NodeProgressRecorder(progress_file)
+                self.progress_recorder = recorder
+                logger.info("Progress recorder -> %s", progress_file)
+            except Exception as exc:
+                logger.warning("Progress recorder init failed: %s", exc)
+
         # ── Invoke ────────────────────────────────────────────
         graph_args = self.propagator.get_graph_args()
 
@@ -346,17 +369,21 @@ class TradingAgentsGraph:
                 with checkpointer:
                     final_state = self.compiled_graph.invoke(
                         initial_state,
-                        config=thread_config,
+                        config=with_callback_config(thread_config, recorder),
                         **graph_args,
                     )
             else:
                 final_state = self.compiled_graph.invoke(
                     initial_state,
+                    config=with_callback_config({}, recorder),
                     **graph_args,
                 )
         except Exception as exc:
             logger.error("Graph invocation failed: %s", exc)
             self._emit("graph_invoke_error", {"error": str(exc)})
+            if self.progress_recorder is not None:
+                with contextlib.suppress(Exception):
+                    self.progress_recorder.mark_error(str(exc))
             raise
         elapsed = time.time() - t0
 
@@ -385,6 +412,10 @@ class TradingAgentsGraph:
         # ── Extract signal ────────────────────────────────────
         decision_text = final_state.get("final_trade_decision", "")
         rating = self.signal_processor.process_signal(decision_text)
+
+        if self.progress_recorder is not None:
+            with contextlib.suppress(Exception):
+                self.progress_recorder.mark_complete(rating, round(time.time() - t0, 1))
 
         # ── Store decision in memory ─────────────────────────
         self._store_decision(company_name, trade_date, final_state, rating)
