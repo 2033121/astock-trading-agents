@@ -68,6 +68,19 @@ DEFAULT_CONFIG = {
     },
     "data_vendor": None,  # 全局首选供应商（优先级最高），None 则按各分类配置
     "tool_vendors": {},
+    # ── 外部校准接入（issue #1 试点，默认关闭）─────────────────
+    # 第三方公开记分板（Headline Arena）的只读接入：同步机械结算记录，并与
+    # 提交前冻结的本地宏观判断比对，给反思闭环一份外部参照。
+    # 凭据纪律：agent_id/client_secret 只从环境变量读取，绝不写入本文件或仓库。
+    #   HEADLINE_ARENA_AGENT_ID / HEADLINE_ARENA_CLIENT_SECRET / HEADLINE_ARENA_TOKEN
+    # 未配置 agent_id 时全链路优雅跳过（预期行为，不是错误）。
+    # 来源隔离：外部结算写入 project_dir/external_calibration/ 独立台账，
+    # 绝不写入 trading_memory.log / memory/trading_memory.md。
+    "enable_external_calibration": False,  # 总开关（试点期默认关闭，显式开启）
+    "external_calibration_provider": "headline_arena",  # 当前唯一候选（见 issue #1）
+    "external_calibration_dir": "",  # 台账目录，空则 project_dir/external_calibration
+    "headline_arena_base_url": "https://headlinearena.com/api/v1",  # API 根地址
+    "headline_arena_timeout": 15,  # 单次请求超时（秒）
     # ── 报告产出 ────────────────────────────────────────────
     "report_output_dir": os.environ.get("ASTOCK_REPORT_DIR", ""),  # HTML 报告保存目录（空则不生成）
 }

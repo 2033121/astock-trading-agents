@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **外部校准接入（Headline Arena 试点支撑）** (`external_calibration/` + `scripts/external_calibration.py` + `docs/外部校准接入.md`)：给反思闭环补一份**不由自己运营**的机械结算参照（issue #1）
+  - `arena_client.py`：只读 REST 客户端，对接官方公开端点（`/eval/agents/{id}/predictions|calibration|scorecard`，无需登录）；凭据只从环境变量读取、绝不落盘，无凭据时全链路优雅降级为 `None` 且绝不抛异常（网络/HTTP 4xx-5xx/非 JSON/结构异常全部覆盖）；实机验证发现平台前置网关对缺少 `User-Agent` 的请求返回 403，客户端已统一发送
+  - `ledger.py`：追加式 JSONL 台账，与内部交易记忆**物理隔离**——构造时即拒绝 `trading_memory.{log,md}` 路径；每条记录带 `source: external_headline_arena` 并整包保留平台原始返回；重复结算幂等，本地判断默认写一次即冻结（须 `--overwrite` 才能修正），保证「提交前的内部判断」事后无法被结算结果反向污染
+  - `reconciliation.py`：把「第三方机械结算线」与「提交前冻结的本地镜像线」配对成比对报告（命中率/平均置信度/Brier/方向一致率 + 平台公开校准曲线的分箱偏差），自动标注小样本与低配对覆盖率
+  - 题域边界固化为 `ASSET_DOMAIN_BOUNDARY` 并强制出现在每份报告（含 JSON）中：外部结算测的是宏观期货，**不能**作为 A 股个股判断力的裁决
+  - 新增 `tests/test_external_calibration.py` 80 项，全套 323 项通过；`ruff check` + `ruff format --check` 双绿
+  - 未做（按 issue #1 约定）：自动提交预测（试点期人工提交）、接入反思闭环主流程
+
 - **智能体进度侧边栏面板** (`graph/progress_recorder.py` + `scripts/agent_panel.py`)：
   - `NodeProgressRecorder`（LangChain callback）把每个节点 运行中/完成/失败 事件写入 `<symbol>_<date>_progress.jsonl`（`enable_progress_recorder` 默认开，`progress_file`/结果目录可覆盖），`agent_progress` 也通过 `_emit` 供 CLI 回调转发
   - 适配全部 12 位核心智能体的中文标牌与流水线阶段（AGENT_LABELS），未列出的 ReAct 工具子轮不污染面板

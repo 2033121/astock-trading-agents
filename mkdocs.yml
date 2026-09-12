@@ -20,6 +20,7 @@ nav:
   - English (README.en): README.en.md
   - English: README.en.md
   - Token 控制改进方案: Token控制改进方案.md
+  - 外部校准接入: 外部校准接入.md
   - 改进路线图: 改进路线图.md
 markdown_extensions:
   - tables
