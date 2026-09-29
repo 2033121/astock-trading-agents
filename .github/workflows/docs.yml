@@ -37,6 +37,8 @@ jobs:
           sed -i 's#](README.md)#](使用说明.md)#g' docs/README.en.md
           sed -i 's#](README.en.md)#](README.en.md)#g' docs/使用说明.md
           sed -i 's#](docs/images/#](images/#g' docs/使用说明.md
+          # README 中指向 docs/ 下文档的相对链接，在站内要落回同级目录
+          sed -i 's#](docs/\([^)]*\.md\))#](\1)#g' docs/使用说明.md
       - name: Build site
         run: mkdocs build --strict
       - uses: actions/upload-pages-artifact@v3

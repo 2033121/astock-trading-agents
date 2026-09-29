@@ -4,6 +4,14 @@ The routing table ``VENDOR_METHODS`` maps each logical method name to one or
 more vendor implementations.  ``route_to_vendor`` resolves the correct
 implementation based on the global config (``config.get_config()``), with
 automatic fallback through the vendor priority list.
+
+换源的两个触发条件
+------------------
+1. 数据源**抛异常** —— 按 :mod:`astock_trader.dataflows.errors` 里的类型给出
+   合适的日志级别：缺 key 是预期内的（debug），限流和故障才是 warning。
+2. 数据源**返回 ``"[ERROR] ..."`` 软失败串** —— 这也是失败。此前这类返回值被
+   当成正常结果直接返回给调用方，导致「第一个数据源报错就整条 fallback 链作废」：
+   例如妙想配额用尽时，链上的 Tushare / 东方财富 / akshare 根本不会被尝试。
 """
 
 from __future__ import annotations
@@ -13,6 +21,13 @@ import logging
 from typing import Any
 
 from .config import get_config
+from .errors import (
+    NoMarketDataError,
+    VendorError,
+    VendorNotConfiguredError,
+    VendorRateLimitError,
+    is_failure_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +114,9 @@ def route_to_vendor(method: str, *args: Any, **kwargs: Any) -> Any:
        order (first = primary) and use the first one that loads.
     3. If no vendor works, return an error string.
 
+    一个数据源只有在**既没抛异常、也没返回 ``[ERROR]`` 串**时才算成功；否则
+    继续尝试链上的下一个。全部失败时返回最后一个原因，方便定位。
+
     Args:
         method: Logical tool name (must be a key in ``VENDOR_METHODS``).
         *args: Positional arguments forwarded to the implementation.
@@ -136,12 +154,42 @@ def route_to_vendor(method: str, *args: Any, **kwargs: Any) -> Any:
             continue
 
         try:
-            return func(*args, **kwargs)
+            payload = func(*args, **kwargs)
+        except VendorNotConfiguredError as exc:
+            # 缺 key／缺依赖属于预期内的「这个源用不了」，不该刷 warning。
+            last_error = f"{vendor} is not configured: {exc}"
+            logger.debug("Vendor %s.%s not configured: %s", vendor, func_name, exc)
+            continue
+        except VendorRateLimitError as exc:
+            last_error = f"{vendor} is rate limited: {exc}"
+            logger.warning("Vendor %s.%s is rate limited: %s", vendor, func_name, exc)
+            continue
+        except NoMarketDataError as exc:
+            last_error = f"{vendor} has no usable data: {exc}"
+            logger.info("Vendor %s.%s returned no usable data: %s", vendor, func_name, exc)
+            continue
+        except VendorError as exc:
+            last_error = f"{vendor} is unavailable: {exc}"
+            logger.warning("Vendor %s.%s unavailable: %s", vendor, func_name, exc)
+            continue
         except Exception as exc:
             last_error = f"{vendor}.{func_name} raised: {exc}"
             logger.warning("Vendor %s.%s failed: %s", vendor, func_name, exc)
             continue
 
+        if is_failure_payload(payload):
+            last_error = f"{vendor}.{func_name}: {str(payload).strip()[:300]}"
+            logger.warning(
+                "Vendor %s.%s returned an error payload; falling back to the next vendor.",
+                vendor,
+                func_name,
+            )
+            continue
+
+        return payload
+
+    if len(ordered) == 1:
+        return f"[ERROR] Data vendor '{ordered[0]}' unavailable for '{method}': {last_error}"
     return f"[ERROR] All vendors failed for '{method}': {last_error}"
 
 

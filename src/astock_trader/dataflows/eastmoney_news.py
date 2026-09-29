@@ -8,10 +8,12 @@ try/except — on failure a descriptive error string is returned.
 from __future__ import annotations
 
 import traceback
-from datetime import timedelta
+from datetime import datetime
 from typing import Annotated
 
 import pandas as pd
+
+from astock_trader.point_in_time import in_window, window_reaches_present
 
 try:
     import akshare as ak
@@ -21,6 +23,22 @@ except ImportError:  # pragma: no cover
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _as_datetime(value) -> datetime | None:
+    """把 pandas 时间戳转成 ``datetime``；``NaT`` / 空值返回 ``None``。
+
+    ``None`` 表示「这条新闻没有可用的发布时间」，交给
+    :func:`~astock_trader.point_in_time.in_window` 按窗口是否抵达当下决定去留。
+    """
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return pd.Timestamp(value).to_pydatetime()
+    except (TypeError, ValueError):
+        return None
 
 
 def _ensure_akshare() -> str | None:
@@ -96,14 +114,15 @@ def get_news(
     df = df.rename(columns=col_map)
 
     # Parse dates and filter
+    #
+    # 历史窗口里的新闻必须严格落在 [start_date, end_date] 内：晚于分析日的稿件
+    # 属于未来信息。没有发布时间的条目在回测中同样要丢 —— 无法证明它不是未来。
+    # （此前解析失败时直接 `pass` 保留全部，等于让回测读到未来稿件。）
     if "datetime" in df.columns:
         df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
-        try:
-            start_dt = pd.Timestamp(start_date)
-            end_dt = pd.Timestamp(end_date) + timedelta(days=1)  # inclusive end
-            df = df[(df["datetime"] >= start_dt) & (df["datetime"] < end_dt)]
-        except Exception:
-            pass  # If date parsing fails, return all
+        df = df[df["datetime"].apply(lambda ts: in_window(_as_datetime(ts), start_date, end_date))]
+    elif not window_reaches_present(start_date, end_date):
+        df = df.iloc[0:0]
 
     if df.empty:
         return f"get_news({symbol}): No news in range {start_date} ~ {end_date}."
@@ -168,17 +187,22 @@ def get_global_news(
     df = df.rename(columns=col_map)
 
     # Parse dates and filter
+    #
+    # 窗口是 [curr_date - look_back_days + 1, curr_date]。这里**无条件**套用过滤
+    # 结果：此前只有在筛出非空结果时才采用，一旦窗口内没有稿件就退回未过滤的
+    # 全量数据，历史窗口反而拿到了最新（未来）的新闻。
     if "datetime" in df.columns:
         df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
         try:
-            end_dt = pd.Timestamp(curr_date) + timedelta(days=1)
-            start_dt = end_dt - timedelta(days=look_back_days)
-            mask = df["datetime"].between(start_dt, end_dt)
-            filtered = df[mask]
-            if not filtered.empty:
-                df = filtered
-        except Exception:
-            pass
+            window_start = (pd.Timestamp(curr_date) - pd.Timedelta(days=look_back_days - 1)).strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            return f"get_global_news: Invalid curr_date '{curr_date}'."
+        df = df[df["datetime"].apply(lambda ts: in_window(_as_datetime(ts), window_start, curr_date))]
+    elif not window_reaches_present(curr_date, curr_date):
+        df = df.iloc[0:0]
+
+    if df.empty:
+        return f"get_global_news: No news in window {curr_date} (look_back={look_back_days}d)."
 
     lines: list[str] = [f"## Global Market News (as of {curr_date})\n"]
     for _, row in df.head(limit).iterrows():

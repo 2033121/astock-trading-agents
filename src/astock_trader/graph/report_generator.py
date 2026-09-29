@@ -318,6 +318,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   .rating-badge { display: inline-block; background: var(--buy); color: #fff; font-size: 20px; font-weight: 700; padding: 8px 32px; border-radius: 8px; margin: 16px 0 8px; letter-spacing: 2px; }
   .rating-badge.sell { background: var(--sell); }
   .rating-badge.hold { background: var(--warn); }
+  .rating-badge.review { background: var(--accent); }
   .elapsed { color: var(--text2); font-size: 13px; margin-top: 4px; }
   .pipeline { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: center; padding: 20px 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
   .pipeline-node { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; background: var(--surface); border: 1px solid var(--border); color: var(--text2); }
@@ -394,7 +395,8 @@ function init() {
   const badge = document.getElementById('ratingBadge');
   badge.textContent = DATA.rating;
   const r = DATA.rating || '';
-  if (r.includes('\u5356\u51FA') || r.includes('\u51CF\u6301')) badge.classList.add('sell');
+  if (r.includes('\u5F85\u590D\u6838')) badge.classList.add('review');
+  else if (r.includes('\u5356\u51FA') || r.includes('\u51CF\u6301')) badge.classList.add('sell');
   else if (r.includes('\u6301\u6709')) badge.classList.add('hold');
 
   document.getElementById('elapsedInfo').textContent =

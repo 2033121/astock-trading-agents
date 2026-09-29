@@ -297,6 +297,7 @@ def analyze(
         "持有": "yellow",
         "减持": "red",
         "卖出": "bold red",
+        "待复核": "bold magenta",
     }
     color = rating_colors.get(rating, "white")
 
@@ -397,6 +398,7 @@ def history(
         "持有": "yellow",
         "减持": "red",
         "卖出": "bold red",
+        "待复核": "bold magenta",
     }
 
     for e in entries:

@@ -156,6 +156,9 @@ def create_portfolio_manager(llm: Any, deep_think_llm: Any = None) -> Callable:
             f"你是投资组合经理，需要综合分析以下信息，对 **{company}** 做出最终交易决策。\n\n"
             f"{matrix}\n"
             f"{context}\n\n"
+            "【裁决纪律】只有在证据明显支持某个方向时才给出方向性评级；如果研究方案、"
+            "交易计划与各方风控意见互相冲突，或关键数据缺失，请选「持有」并写明分歧"
+            "所在，不要为了显得果断而硬选一个方向。\n\n"
             "请综合考虑研究员的投资方案、交易员的交易计划、各方风控意见和历史交易记录，"
             "给出你的最终决策：\n"
             "1. 最终评级（买入/增持/持有/减持/卖出）\n"
@@ -163,7 +166,8 @@ def create_portfolio_manager(llm: Any, deep_think_llm: Any = None) -> Callable:
             "3. 投资逻辑（核心推理过程）\n"
             "4. 目标价（如适用）\n"
             "5. 持有周期（如适用）\n\n"
-            "请用中文输出，决策应明确、果断。"
+            "请用中文输出，决策要明确；这里的「明确」指的是把分歧与不确定性写清楚，"
+            "不是在证据不足时假装确定。"
         )
 
         prompt_messages = [("system", SYSTEM_PREFIX), ("human", prompt_text)]

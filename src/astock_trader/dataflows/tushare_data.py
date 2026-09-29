@@ -12,6 +12,10 @@
 - 新闻资讯
 
 API 认证：通过环境变量 TUSHARE_TOKEN 设置，可在 https://tushare.pro/register 注册获取。
+
+数据源不可用时抛 :mod:`astock_trader.dataflows.errors` 里的类型（缺 token →
+``VendorNotConfiguredError``，积分/频次受限 → ``VendorRateLimitError``，网络/超时 →
+``VendorError``），由路由层自动换到下一个数据源。
 """
 
 from __future__ import annotations
@@ -22,10 +26,15 @@ from typing import Annotated, Any
 
 import requests
 
+from astock_trader.dataflows.errors import VendorError, VendorNotConfiguredError, VendorRateLimitError
+
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "http://api.tushare.pro"
 _TIMEOUT = 30
+
+# Tushare 在积分不足／频次超限时把原因写在 msg 里，没有独立错误码。
+_RATE_LIMIT_HINTS = ("积分", "频次", "每分钟", "每天最多", "超过访问", "权限")
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +46,7 @@ def _get_token() -> str:
     """获取 Tushare API Token。必须通过环境变量 TUSHARE_TOKEN 设置。"""
     token = os.environ.get("TUSHARE_TOKEN", "").strip()
     if not token:
-        raise OSError(
+        raise VendorNotConfiguredError(
             "未找到 Tushare API Token。请设置环境变量 TUSHARE_TOKEN，可在 https://tushare.pro/register 注册获取。"
         )
     return token
@@ -69,8 +78,6 @@ def _from_ts_code(ts_code: str) -> str:
 def _call_api(api_name: str, params: dict[str, Any] | None = None, fields: str | None = None) -> dict:
     """调用 Tushare Pro REST API。"""
     token = _get_token()
-    if not token:
-        raise RuntimeError("TUSHARE_TOKEN 未设置。请配置环境变量。")
 
     payload: dict[str, Any] = {
         "api_name": api_name,
@@ -86,7 +93,11 @@ def _call_api(api_name: str, params: dict[str, Any] | None = None, fields: str |
     code = result.get("code", -1)
     if code != 0:
         msg = result.get("msg", "未知错误")
-        raise RuntimeError(f"Tushare API 错误 ({api_name}): {msg}")
+        # Tushare 用一段自然语言说明原因，没有结构化错误码；按关键字分类，
+        # 好在路由层能区分「额度用完了（等一会儿/换源）」和「接错了」。
+        if any(hint in msg for hint in _RATE_LIMIT_HINTS):
+            raise VendorRateLimitError(f"Tushare 接口 {api_name} 受限: {msg}")
+        raise VendorError(f"Tushare API 错误 ({api_name}): {msg}")
 
     return result.get("data", {})
 
@@ -386,19 +397,23 @@ def _get_field_labels(fields: list[str]) -> dict[str, str]:
 
 
 def _safe_call(func):
-    """统一错误包装装饰器。"""
+    """统一错误包装装饰器：把失败转成带类型的 :class:`VendorError`。
+
+    这样路由层能按类型换源并给出合适的日志级别，而不是把一个错误**字符串**
+    当成正常结果返回给 Agent。
+    """
 
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except RuntimeError as e:
-            return f"[ERROR] {e}"
-        except requests.exceptions.Timeout:
-            return f"[ERROR] Tushare API 请求超时（{_TIMEOUT}s）"
-        except requests.exceptions.ConnectionError:
-            return "[ERROR] Tushare API 连接失败，请检查网络"
+        except VendorError:
+            raise
+        except requests.exceptions.Timeout as exc:
+            raise VendorError(f"Tushare API 请求超时（{_TIMEOUT}s）") from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise VendorError("Tushare API 连接失败，请检查网络") from exc
         except Exception as exc:
-            return f"[ERROR] Tushare API 调用异常: {exc}"
+            raise VendorError(f"Tushare API 调用异常: {exc}") from exc
 
     wrapper.__name__ = func.__name__
     wrapper.__doc__ = func.__doc__

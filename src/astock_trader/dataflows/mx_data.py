@@ -6,6 +6,11 @@
 - 智能选股
 
 API 认证：环境变量 MX_APIKEY，通过 HTTP Header ``apikey`` 传递。
+
+数据源不可用时抛 :mod:`astock_trader.dataflows.errors` 里的类型（缺 key →
+``VendorNotConfiguredError``，配额用尽 → ``VendorRateLimitError``，网络/超时 →
+``VendorError``），由路由层自动换到下一个数据源；不要用返回错误串的方式表达
+「这个源用不了」，那会让整条 fallback 链失效。
 """
 
 from __future__ import annotations
@@ -15,6 +20,8 @@ import os
 from typing import Annotated
 
 import requests
+
+from astock_trader.dataflows.errors import VendorError, VendorNotConfiguredError, VendorRateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +33,14 @@ def _get_api_key() -> str | None:
     """从环境变量获取 API Key。"""
     key = os.environ.get("MX_APIKEY")
     if not key:
-        logger.warning("MX_APIKEY 环境变量未设置，妙想 API 不可用。")
+        logger.debug("MX_APIKEY 环境变量未设置，妙想 API 不可用。")
     return key
 
 
 def _headers() -> dict[str, str]:
     key = _get_api_key()
     if not key:
-        raise RuntimeError("MX_APIKEY 环境变量未设置。请先配置：export MX_APIKEY=your-key")
+        raise VendorNotConfiguredError("MX_APIKEY 环境变量未设置。请先配置：export MX_APIKEY=your-key")
     return {
         "apikey": key,
         "Content-Type": "application/json",
@@ -41,23 +48,52 @@ def _headers() -> dict[str, str]:
 
 
 def _safe_call(func):
-    """统一错误包装装饰器。"""
+    """统一错误包装装饰器：把传输层异常转成带类型的 :class:`VendorError`。
+
+    这样路由层能按类型换源并给出合适的日志级别，而不是把一个错误**字符串**
+    当成正常结果返回给 Agent。
+    """
 
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except RuntimeError:
+        except VendorError:
             raise
-        except requests.exceptions.Timeout:
-            return f"[ERROR] 妙想 API 请求超时（{_TIMEOUT}s）"
-        except requests.exceptions.ConnectionError:
-            return "[ERROR] 妙想 API 连接失败，请检查网络"
+        except requests.exceptions.Timeout as exc:
+            raise VendorError(f"妙想 API 请求超时（{_TIMEOUT}s）") from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise VendorError("妙想 API 连接失败，请检查网络") from exc
         except Exception as exc:
-            return f"[ERROR] 妙想 API 调用异常: {exc}"
+            raise VendorError(f"妙想 API 调用异常: {exc}") from exc
 
     wrapper.__name__ = func.__name__
     wrapper.__doc__ = func.__doc__
     return wrapper
+
+
+# 妙想 API 状态码 → 错误类型。113 = 调用次数已达上限，114 = Key 失效。
+_RATE_LIMIT_CODES = {"113"}
+_NOT_CONFIGURED_CODES = {"114"}
+
+
+def _ensure_ok(result: dict, action: str) -> dict:
+    """校验妙想 API 返回的 ``status``，失败时抛出**带类型**的错误。
+
+    换源决策交给路由层：配额用尽 → :class:`VendorRateLimitError`，
+    Key 失效 → :class:`VendorNotConfiguredError`，其余 → :class:`VendorError`。
+    校验通过时原样返回 ``result``，方便写成 ``result = _ensure_ok(resp.json(), "...")``。
+    """
+    status = result.get("status", -1)
+    if status == 0:
+        return result
+
+    code = str(result.get("code", "")).strip()
+    message = result.get("message", "未知错误")
+    if code in _RATE_LIMIT_CODES:
+        raise VendorRateLimitError(f"妙想 API 调用次数已达上限（{action}）。")
+    if code in _NOT_CONFIGURED_CODES:
+        raise VendorNotConfiguredError(f"妙想 API Key 已失效，请检查 MX_APIKEY（{action}）。")
+    raise VendorError(f"妙想 {action}失败 (status={status}, code={code}): {message}")
 
 
 def _parse_data_tables(result: dict) -> str:
@@ -215,16 +251,7 @@ def get_fundamentals(
         json={"toolQuery": query},
         timeout=_TIMEOUT,
     )
-    result = resp.json()
-    status = result.get("status", -1)
-    if status != 0:
-        code = result.get("code", "")
-        msg = result.get("message", "未知错误")
-        if code == 113:
-            return "[ERROR] 妙想 API 调用次数已达上限。"
-        if code == 114:
-            return "[ERROR] 妙想 API Key 已失效，请检查 MX_APIKEY。"
-        return f"[ERROR] 妙想 API 返回错误 (status={status}, code={code}): {msg}"
+    result = _ensure_ok(resp.json(), "公司基本面查询")
     return f"# {symbol} 基本面数据（妙想）\n\n{_parse_data_tables(result)}"
 
 
@@ -244,8 +271,7 @@ def get_balance_sheet(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想资产负债表查询失败: {result.get('message', '')}"
+    _ensure_ok(result, "资产负债表查询")
     return f"# {symbol} 资产负债表（妙想）\n\n{_parse_data_tables(result)}"
 
 
@@ -265,8 +291,7 @@ def get_cashflow(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想现金流量查询失败: {result.get('message', '')}"
+    _ensure_ok(result, "现金流量查询")
     return f"# {symbol} 现金流量表（妙想）\n\n{_parse_data_tables(result)}"
 
 
@@ -286,8 +311,7 @@ def get_income_statement(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想利润表查询失败: {result.get('message', '')}"
+    _ensure_ok(result, "利润表查询")
     return f"# {symbol} 利润表（妙想）\n\n{_parse_data_tables(result)}"
 
 
@@ -306,8 +330,7 @@ def get_news(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想资讯搜索失败: {result.get('message', '')}"
+    _ensure_ok(result, "资讯搜索")
     return _parse_search_results(result)
 
 
@@ -326,8 +349,7 @@ def get_global_news(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想全球新闻搜索失败: {result.get('message', '')}"
+    _ensure_ok(result, "全球新闻搜索")
     return _parse_search_results(result)
 
 
@@ -345,8 +367,7 @@ def get_stock_valuation(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想估值查询失败: {result.get('message', '')}"
+    _ensure_ok(result, "估值查询")
     return f"# {symbol} 估值数据（妙想）\n\n{_parse_data_tables(result)}"
 
 
@@ -364,8 +385,7 @@ def get_shareholder_info(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想股东查询失败: {result.get('message', '')}"
+    _ensure_ok(result, "股东查询")
     return f"# {symbol} 股东信息（妙想）\n\n{_parse_data_tables(result)}"
 
 
@@ -382,8 +402,7 @@ def get_industry_chain(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想产业链查询失败: {result.get('message', '')}"
+    _ensure_ok(result, "产业链查询")
     return f"# {symbol} 产业链分析（妙想）\n\n{_parse_data_tables(result)}"
 
 
@@ -400,6 +419,5 @@ def get_industry_peers(
         timeout=_TIMEOUT,
     )
     result = resp.json()
-    if result.get("status", -1) != 0:
-        return f"[ERROR] 妙想可比公司查询失败: {result.get('message', '')}"
+    _ensure_ok(result, "可比公司查询")
     return f"# {symbol} 可比公司对比（妙想）\n\n{_parse_data_tables(result)}"

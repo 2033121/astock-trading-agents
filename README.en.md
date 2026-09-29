@@ -19,7 +19,15 @@ authoritative full reference.
   / neutral) challenge the trade plan; the portfolio manager makes the final call.
 - **Reflection loop** — every decision is snapshotted, marked against realised
   5/10/20-day returns via akshare, and fed back as decayed, quality-gated
-  prompt context (`backtest_feedback.json`).
+  prompt context (`backtest_feedback.json`). The holding window is measured in
+  **trading days**, so a holiday week never mislabels a 1-day move as a 5-day one.
+- **Point-in-time safety** — running an analysis on a historical date
+  (`--date`) gates memory recall, vector-memory retrieval, the news window and
+  reflection settlement to that date, so nothing known only *after* the
+  analysis date can reach the prompt (see `docs/前视偏差防护.md`).
+- **Honest signals** — an unparseable rating surfaces as `待复核` (needs
+  review) instead of silently degrading to Hold; a missing benchmark records
+  alpha as unknown instead of 0.
 - **A-share-native** — T+1, limit-up/down board rules, red-up/green-down
   conventions, CJK-tolerant signal extraction, akshare/tushare data stack.
 - **Token-aware pipeline** — configurable four-tier model routing, shared

@@ -12,6 +12,12 @@ Usage::
     mem = MarketMemory()
     mem.index_analysis("600519", "2026-06-01", "贵州茅台分析报告...", rating="买入")
     records = mem.search("白酒行业龙头估值", top_k=3)
+
+时间点门控
+----------
+检索默认按**分析日**过滤：``search(..., as_of="2025-06-01")`` 只会返回
+``date <= as_of`` 的记录。历史/回测运行必须传 ``as_of``，否则会把「未来」
+的分析报告注入 prompt（前视偏差）。``as_of=None`` 表示实时运行，不过滤。
 """
 
 from __future__ import annotations
@@ -25,6 +31,9 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+from astock_trader.point_in_time import within_as_of
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +179,11 @@ class _TfIdfIndex:
             self.df[t] += 1
         self._n += 1
 
-    def search(self, query: str, top_k: int = 5) -> list[AnalysisRecord]:
+    def search(self, query: str, top_k: int = 5, as_of: str | None = None) -> list[AnalysisRecord]:
+        """Search for analysis records relevant to *query*.
+
+        ``as_of`` 给出时只参与 ``date <= as_of`` 的记录，避免历史运行检索到未来。
+        """
         if not self.docs:
             return []
 
@@ -180,6 +193,8 @@ class _TfIdfIndex:
 
         scored: list[tuple[float, int]] = []
         for idx, doc in enumerate(self.docs):
+            if not within_as_of(doc["record"].date, as_of):
+                continue
             score = self._cosine_sim(query_tokens, doc["tokens"])
             if score > 0:
                 scored.append((score, idx))
@@ -325,24 +340,39 @@ class MarketMemory:
         logger.info("Indexed %s: %d segments (rating=%s)", label, len(segments), rating)
         return len(segments)
 
-    def search(self, query: str, top_k: int = 3) -> list[AnalysisRecord]:
-        """Semantic search for analysis records relevant to *query*."""
-        return self._search(query, top_k=top_k)
+    def search(self, query: str, top_k: int = 3, as_of: str | None = None) -> list[AnalysisRecord]:
+        """Semantic search for analysis records relevant to *query*.
 
-    def search_by_ticker(self, ticker: str, top_k: int = 3) -> list[AnalysisRecord]:
+        Parameters
+        ----------
+        query : str
+            检索词。
+        top_k : int
+            返回条数上限。
+        as_of : str | None
+            本次运行的分析日（``YYYY-MM-DD``）。给出时只返回
+            ``date <= as_of`` 的记录 —— 历史/回测运行必须传，否则未来报告会
+            泄漏进 prompt。``None`` 表示实时运行，不过滤。
+        """
+        return self._search(query, top_k=top_k, as_of=as_of)
+
+    def search_by_ticker(self, ticker: str, top_k: int = 3, as_of: str | None = None) -> list[AnalysisRecord]:
         """Search for records about a specific ticker.
 
         First attempts TF-IDF semantic search, then falls back to
         direct metadata scan for exact ticker matches.
+        ``as_of`` 语义与 :meth:`search` 相同。
         """
         # Try semantic search first
-        results = self._search(ticker, top_k=top_k * 3)
+        results = self._search(ticker, top_k=top_k * 3, as_of=as_of)
         filtered = [r for r in results if r.ticker == ticker or ticker in r.content]
 
         if len(filtered) < top_k:
             # Fallback: scan all records for exact ticker match
             seen = {r.label for r in filtered}
             for rec in self._all_records:
+                if not within_as_of(rec.date, as_of):
+                    continue
                 if rec.ticker == ticker and rec.label not in seen:
                     filtered.append(rec)
                     seen.add(rec.label)
@@ -516,14 +546,18 @@ class MarketMemory:
             self._tfidf_index.add(record)
         self._all_records.append(record)
 
-    def _search(self, query: str, top_k: int = 5) -> list[AnalysisRecord]:
+    def _search(self, query: str, top_k: int = 5, as_of: str | None = None) -> list[AnalysisRecord]:
         if self._backend == "chroma":
-            if self._chroma_collection.count() == 0:
+            count = self._chroma_collection.count()
+            if count == 0:
                 return []
-            results = self._chroma_collection.query(
-                query_texts=[query],
-                n_results=min(top_k, self._chroma_collection.count()),
-            )
+            query_kwargs: dict[str, Any] = {
+                "query_texts": [query],
+                "n_results": min(top_k, count),
+            }
+            if as_of is not None:
+                query_kwargs["where"] = {"date": {"$lte": as_of}}
+            results = self._chroma_collection.query(**query_kwargs)
             records: list[AnalysisRecord] = []
             if results and results["documents"]:
                 for i, doc in enumerate(results["documents"][0]):
@@ -541,6 +575,10 @@ class MarketMemory:
                             score=round(1.0 - dist, 4),
                         )
                     )
+            # 兜底再过滤一次：后端可能忽略 where（或该后端不支持），
+            # 放行未来记录是前视偏差，宁可少返回。
+            if as_of is not None:
+                records = [r for r in records if within_as_of(r.date, as_of)]
             return records
         else:
-            return self._tfidf_index.search(query, top_k=top_k)
+            return self._tfidf_index.search(query, top_k=top_k, as_of=as_of)

@@ -6,7 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **前视偏差防护（对齐上游 TradingAgents v0.4.x）**：`--date <历史日期>` 运行时，任何「分析日之后才可知」的信息都不再进入 prompt。判据收敛在新增的 `point_in_time.py`，专题说明见 `docs/前视偏差防护.md`
+  - **交易记忆**：resolved 条目新增 `resolved_date`（结局落地的那个交易日），`get_past_context(ticker, as_of=...)` 只放行 `resolved_date <= as_of`；没有该字段的**老条目在 as_of 查询下保守排除**，实时运行（`as_of=None`）行为不变。此前 `get_past_context` 完全不看运行日期，2025 年的分析会读到 2026 年才落地的反思教训（上游 #1251）
+  - **向量记忆**：`MarketMemory.search/search_by_ticker` 新增 `as_of`。TF-IDF 后端在**排序前**过滤候选（`top_k` 仍由历史记录填满）；chroma 后端下发 `where={"date": {"$lte": as_of}}` 并在返回后兜底再过滤一次（后端忽略该条件时宁可少返回也不放行未来记录）；「直接扫元数据」的兜底路径同样受门控
+  - **反思闭环持有窗口改为按交易日判定**：结算要求已出现 `days + 1` 根**已收盘** K 线，不足则条目保持 pending。原实现用 `timedelta(days=5)` 自然日判定 + `target_idx = min(days, len(df)-1)` 取平仓价，长假期间会把 **1 日收益写成「5日收益」** 并作为教训存入记忆；平仓价一律取严格早于今天的 K 线（当日 K 线可能还在变）；基准拉不到时 `alpha_return` 记为 `None`、文案写「超额未获取」，不再假装超额为 0（上游同类修复）
+  - **新闻窗口**：`eastmoney_news` 的两处泄漏修掉 —— `get_news` 日期解析失败时原先 `pass` 返回**全部**新闻，`get_global_news` 原先只在筛选结果非空时才采用过滤、窗口筛空即退回全量。现在统一用 `in_window`，比较**北京时间的日历天**（naive 发布时间按 CST 解释，避免 UTC 偏移 8 小时把「次日凌晨」的稿件漏进窗口）；无发布时间的条目只在实时窗口保留（上游 #1126 / #1220）
+- **评级解析不出来时报「待复核」，不再静默降级成「持有」** (`agents/utils/rating.py` + `graph/signal_processing.py`)：新增 `extract_rating()`（无法确定返回 `None`）与 `RATING_REVIEW = "待复核"`；`parse_rating()` 保留旧的「总有返回值」语义供历史调用点使用。同时修掉两处误判：标签命中但取值不在五级刻度内（如 `评级: 观望`）不再退到全文搜索，避免从「买入/增持/持有/减持/卖出」刻度说明里捞出一个凭空造的评级；英文关键词改用词干+变形匹配（`buying` 仍识别，`buyer`/`seller` 不再误判）。CLI 评级色、HTML 报告徽章均补上「待复核」样式（上游 #1170）
+- **数据源软失败不再阻断 fallback 链** (`dataflows/interface.py` + 新增 `dataflows/errors.py`)：`route_to_vendor` 此前把任何返回值都当成成功直接返回 —— 妙想配额用尽返回 `"[ERROR] ..."` 时，链上的 Tushare / 东方财富 / akshare 根本不会被尝试，Agent 拿到一句错误文本并把它当成数据。现在换源有两个触发条件：抛异常（按 `VendorError` 子类分类）或返回 `[ERROR]` 串。新增 `VendorError` / `NoMarketDataError` / `VendorRateLimitError` / `VendorNotConfiguredError` 层级（类型数量 = 路由层的不同反应数量），缺 key 降为 debug 级日志、限流保持 warning；`mx_data`（状态码 113/114、传输异常）、`tushare_data`（缺 token、积分/频次受限）已迁移为类型化抛错
+- **交易员价位锚定** (`agents/trader/trader.py`)：把技术面报告喂给 Trader（此前只给研究方案，入场价/止损价只能靠编），并要求入场价/止损价填**绝对价格**（人民币元）——不填百分比、区间或「现价下方 3%」这类相对描述，换算不出来就留空（上游 #1167 / #1288）
+- **裁决纪律** (`agents/managers/research_manager.py` + `portfolio_manager.py`)：明确「证据均衡、互相冲突或信息不足时选『持有』，不要为了显得果断而硬选一个方向」，研究经理另加「评估多空只看论据、不受发言先后顺序影响」。组合经理原结尾「决策应明确、果断」会把模型推向编方向，改为「明确 = 把分歧与不确定性写清楚」
+
 ### Added
+
+- **时间点门控模块** (`point_in_time.py`)：`normalize_date` / `within_as_of` / `in_window` / `window_reaches_present` / `to_local` + `CST` 常量。保守方向统一为「证明不了它在分析日之前可知，就不放行」；`CST` 用固定 UTC+8 而非 `zoneinfo`（Windows 缺 IANA 数据库时 `ZoneInfo("Asia/Shanghai")` 会直接抛异常）
+- **`docs/前视偏差防护.md`**：四道门的判据、数据源错误层级与换源契约、新增数据源检查清单、**已知缺口**（基本面当期快照泄漏 A9 等）与上游提交对照表
+- 新增 7 个专项测试文件 `tests/test_point_in_time.py`、`test_memory_pointintime.py`、`test_market_memory_pointintime.py`、`test_reflection_holding_window.py`、`test_news_lookahead.py`、`test_dataflows_vendor_errors.py`、`test_agent_prompt_grounding.py`，并为评级严格性追加用例；全套 **488 项通过**（原 327 项），`ruff check` + `ruff format --check` 双绿
 
 - **外部校准接入（Headline Arena 试点支撑）** (`external_calibration/` + `scripts/external_calibration.py` + `docs/外部校准接入.md`)：给反思闭环补一份**不由自己运营**的机械结算参照（issue #1）
   - `arena_client.py`：只读 REST 客户端，对接官方公开端点（`/eval/agents/{id}/predictions|calibration|scorecard`，无需登录）；凭据只从环境变量读取、绝不落盘，无凭据时全链路优雅降级为 `None` 且绝不抛异常（网络/HTTP 4xx-5xx/非 JSON/结构异常全部覆盖）；实机验证发现平台前置网关对缺少 `User-Agent` 的请求返回 403，客户端已统一发送
@@ -21,8 +37,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - 适配全部 12 位核心智能体的中文标牌与流水线阶段（AGENT_LABELS），未列出的 ReAct 工具子轮不污染面板
   - `scripts/agent_panel.py`：零依赖生成自刷新 HTML 面板（2s meta refresh），状态色/耗时/焦点高亮/最终评级；DSH 会话可通过 sidebar 打开实时观察，其他宿主浏览器打开即可
   - 新增 `tests/test_progress_panel.py` 6 项（含空运行/未知节点过滤/完整时序），全套 247 项通过
-
-### Added
 
 - **多宿主插件集成** (`integrations/install.sh` + `docs/README.md`→`integrations/README.md`)：幂等安装器把 `skills/` 注册到 DSH（软链）、Claude Code（软链）、zCode（软链，未装则跳过）、Codex CLI（SKILL.md → `~/.codex/prompts/astock-<slug>.md` slash 命令，中文技能名映射 ascii slug）；AGENTS.md 增补 Skills 触发词表——AGENTS.md 系宿主零安装即可用；支持 `--dry-run/--force`；沙箱实测四宿主注册成功
 

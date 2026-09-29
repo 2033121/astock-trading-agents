@@ -37,6 +37,7 @@ from astock_trader.graph.reflection import Reflector
 from astock_trader.graph.setup import GraphSetup
 from astock_trader.graph.signal_processing import SignalProcessor
 from astock_trader.llm_clients.resilience import ResilientInvoker
+from astock_trader.point_in_time import normalize_date
 
 # Backtest feedback consumer (optional import, graceful fallback)
 try:
@@ -45,6 +46,10 @@ except ImportError:
     BacktestFeedbackConsumer = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger(__name__)
+
+# 反思闭环的持有窗口（交易日）。结算要求已出现 _HOLDING_DAYS + 1 根收盘 K 线，
+# 即决策日收盘建仓、持有 _HOLDING_DAYS 个交易日后平仓。
+_HOLDING_DAYS = 5
 
 # ────────────────────────────────────────────────────────────────
 #  Model-name → base_url auto-detection map
@@ -292,13 +297,15 @@ class TradingAgentsGraph:
         import time
 
         # ── Past context from memory ──────────────────────────
-        past_context = self.memory_log.get_past_context(company_name)
+        # trade_date 同时作为时间点：历史日期分析只能看到「当时已经落地」的教训，
+        # 否则会学到未来才发生的结局（前视偏差）。
+        past_context = self.memory_log.get_past_context(company_name, as_of=trade_date)
 
         # Enrich with vector memory search (if available)
         if self.market_memory and self.market_memory.record_count > 0:
             try:
                 query = f"{company_name} 分析 投资"
-                records = self.market_memory.search(query, top_k=3)
+                records = self.market_memory.search(query, top_k=3, as_of=trade_date)
                 memory_context = self.market_memory.format_for_prompt(records)
                 if memory_context:
                     past_context = f"{past_context}\n\n{memory_context}" if past_context else memory_context
@@ -667,43 +674,53 @@ class TradingAgentsGraph:
             logger.debug("Failed to index in vector memory: %s", exc)
 
     def _resolve_pending_memory(self, company_name: str) -> None:
-        """Resolve pending memory entries that are ≥5 days old.
+        """结算持有窗口已经走完的 pending 记忆条目。
 
-        For each eligible entry:
-        1. Fetch actual T+5 return via akshare.
-        2. Fetch benchmark (CSI 300) return for alpha calculation.
-        3. Generate LLM reflection via Reflector.
-        4. Batch-update the memory log (pending → resolved).
+        「窗口走完」按**交易日**判定：从决策日起必须已经存在
+        ``_HOLDING_DAYS + 1`` 根已收盘 K 线。用自然日判定是不够的 —— 春节、
+        国庆长假里 5 个自然日可能只含 1~2 个交易日，那时结算会把「1 日收益」
+        当成「5 日收益」写进记忆，等于给未来的反思喂错标签。
 
-        Errors on individual entries are logged and skipped so that one
-        bad ticker doesn't block the entire batch.
+        对每个到期条目：
+
+        1. 拉取从决策日起的 ``_HOLDING_DAYS + 1`` 根日线，算出真实收益；
+        2. 同日用沪深300 算超额收益；
+        3. 用 :class:`Reflector` 生成 LLM 反思；
+        4. 批量写回记忆日志（pending → resolved），并记录**平仓日**作为
+           ``resolved_date`` —— 它是时间点门控的比较键。
+
+        单条条目出错只记日志并跳过，不阻塞整批。
         """
-        from datetime import datetime, timedelta
+        from datetime import date, datetime
 
         try:
             pending = self.memory_log.get_pending_entries()
             if not pending:
                 return
 
-            cutoff = datetime.now() - timedelta(days=5)
+            # 廉价预筛：自然日上至少过去 _HOLDING_DAYS 天的条目才值得去拉行情。
+            # 真正的资格由 _forward_return 用真实 K 线确认。
+            today = datetime.now().date()
             eligible: list[dict[str, Any]] = []
             for entry in pending:
-                try:
-                    entry_date = datetime.strptime(entry["date"], "%Y-%m-%d")
-                    if entry_date <= cutoff:
-                        eligible.append(entry)
-                except (ValueError, KeyError):
+                entry_date = normalize_date(entry.get("date"))
+                if entry_date is None:
                     continue
+                if (today - date.fromisoformat(entry_date)).days >= _HOLDING_DAYS:
+                    eligible.append(entry)
 
             if not eligible:
                 logger.debug(
-                    "No pending entries old enough to resolve (%d pending, cutoff=%s).",
+                    "No pending entries past the calendar pre-filter (%d pending).",
                     len(pending),
-                    cutoff.strftime("%Y-%m-%d"),
                 )
                 return
 
-            logger.info("Resolving %d pending memory entries (≥5 days old).", len(eligible))
+            logger.info(
+                "Checking %d pending memory entries for a settled %d-trading-day window.",
+                len(eligible),
+                _HOLDING_DAYS,
+            )
 
             updates: list[dict[str, Any]] = []
             for entry in eligible:
@@ -715,40 +732,57 @@ class TradingAgentsGraph:
                     decision_text = decision.get("final_trade_decision", "") or decision.get("reasoning", "")
 
                 try:
-                    raw_ret = self._fetch_actual_returns(ticker, trade_date, days=5)
-                    bench_ret = self._fetch_benchmark_return(trade_date, days=5)
-
-                    if raw_ret is None:
-                        logger.debug("Could not fetch returns for %s, skipping.", ticker)
+                    outcome = self._forward_return(ticker=ticker, trade_date=trade_date, days=_HOLDING_DAYS)
+                    if outcome is None:
+                        # 窗口没走完（或行情缺失）：保持 pending，下次再试。
+                        logger.debug(
+                            "Holding window not settled yet for %s@%s; leaving pending.",
+                            ticker,
+                            trade_date,
+                        )
                         continue
+                    raw_ret, exit_date = outcome
 
-                    alpha = (raw_ret - bench_ret) if bench_ret is not None else 0.0
+                    benchmark = self._forward_return(ticker=None, trade_date=trade_date, days=_HOLDING_DAYS, index=True)
+                    bench_ret = benchmark[0] if benchmark else None
+                    # 基准缺失时不假装超额为 0：记为未知，让反思看到的是「不知道」。
+                    alpha: float | None = (raw_ret - bench_ret) if bench_ret is not None else None
 
                     reflection_text = self.reflector.reflect_on_final_decision(
                         final_decision=decision_text or f"评级: {entry.get('rating', '?')}",
                         raw_return=raw_ret,
-                        alpha_return=alpha,
+                        alpha_return=alpha if alpha is not None else 0.0,
                     )
+
+                    if alpha is None:
+                        outcome_text = f"{_HOLDING_DAYS}日收益 {raw_ret:+.1%}, 超额未获取（基准数据缺失）"
+                    else:
+                        outcome_text = f"{_HOLDING_DAYS}日收益 {raw_ret:+.1%}, 超额 {alpha:+.1%}"
 
                     updates.append(
                         {
                             "ticker": ticker,
                             "trade_date": trade_date,
+                            # 平仓日 = 结局落地日，历史日期分析据此判断该教训是否已知。
+                            "resolved_date": exit_date,
                             "reflection": {
-                                "outcome": f"5日收益 {raw_ret:+.1%}, 超额 {alpha:+.1%}",
+                                "outcome": outcome_text,
                                 "raw_return": round(raw_ret, 4),
-                                "alpha_return": round(alpha, 4),
+                                "alpha_return": round(alpha, 4) if alpha is not None else None,
+                                "holding_days": _HOLDING_DAYS,
+                                "hold_end": exit_date,
                                 "lesson": reflection_text,
-                                "resolved_date": datetime.now().strftime("%Y-%m-%d"),
+                                "resolved_date": exit_date,
                             },
                         }
                     )
                     logger.info(
-                        "Resolved %s@%s: raw=%.1f%%, alpha=%.1f%%",
+                        "Resolved %s@%s: raw=%.1f%%, alpha=%s, exit=%s",
                         ticker,
                         trade_date,
                         raw_ret * 100,
-                        alpha * 100,
+                        f"{alpha * 100:.1f}%" if alpha is not None else "n/a",
+                        exit_date,
                     )
                 except Exception as exc:
                     logger.warning("Failed to resolve entry %s@%s: %s", ticker, trade_date, exc)
@@ -761,103 +795,109 @@ class TradingAgentsGraph:
         except Exception as exc:
             logger.warning("Memory resolution failed: %s", exc)
 
-    def _fetch_actual_returns(
+    def _forward_return(
         self,
-        ticker: str,
+        *,
+        ticker: str | None,
         trade_date: str,
-        days: int = 5,
-    ) -> float | None:
-        """Fetch actual stock return over *days* trading days after *trade_date*.
+        days: int,
+        index: bool = False,
+    ) -> tuple[float, str] | None:
+        """计算从 *trade_date* 起持有 *days* 个**交易日**的收益率。
 
-        Uses akshare ``stock_zh_a_hist`` with forward-fill adjustment.
-        Returns ``None`` if data is unavailable or insufficient.
+        Parameters
+        ----------
+        ticker : str | None
+            股票代码；``index=True`` 时忽略。
+        trade_date : str
+            决策日（``YYYY-MM-DD``）。建仓价取该日（或其后第一个交易日）的收盘。
+        days : int
+            持有交易日数。
+        index : bool
+            ``True`` 时拉沪深300（000300）作为基准。
+
+        Returns
+        -------
+        tuple[float, str] | None
+            ``(收益率, 平仓日)``；当已收盘 K 线不足 ``days + 1`` 根时返回
+            ``None`` —— 窗口还没走完，不能拿短窗口收益冒充 N 日收益。
+
+        Notes
+        -----
+        只使用**严格早于今天**的 K 线：当日盘中（或收盘后但数据未落定）的那根
+        仍可能变化，用它结算等于把浮动价格写成 T+N 结果。代价是结算最多延后
+        一天，换的是「写进记忆的数字都是已收盘价」。
         """
+        from datetime import datetime, timedelta
+
         try:
-            from datetime import datetime, timedelta
-
             import akshare as ak
-
-            dt = datetime.strptime(trade_date, "%Y-%m-%d")
-            start_str = dt.strftime("%Y%m%d")
-            end_str = (dt + timedelta(days=days + 10)).strftime("%Y%m%d")
-
-            df = ak.stock_zh_a_hist(
-                symbol=ticker,
-                period="daily",
-                start_date=start_str,
-                end_date=end_str,
-                adjust="qfq",
-            )
-            if df is None or df.empty or len(df) < 2:
-                return None
-
-            df["日期"] = df["日期"].astype(str)
-            df = df[df["日期"] >= trade_date].reset_index(drop=True)
-            if len(df) < 2:
-                return None
-
-            entry_price = float(df.iloc[0]["收盘"])
-            target_idx = min(days, len(df) - 1)
-            exit_price = float(df.iloc[target_idx]["收盘"])
-
-            if entry_price <= 0:
-                return None
-            return (exit_price - entry_price) / entry_price
-
         except ImportError:
             logger.debug("akshare not available for return fetching.")
             return None
-        except Exception as exc:
-            logger.debug("Failed to fetch actual returns for %s: %s", ticker, exc)
-            return None
 
-    def _fetch_benchmark_return(
-        self,
-        trade_date: str,
-        days: int = 5,
-    ) -> float | None:
-        """Fetch CSI 300 benchmark return over *days* trading days.
-
-        Uses akshare ``index_zh_a_hist`` for the 沪深300 index (000300).
-        Returns ``None`` if data is unavailable.
-        """
         try:
-            from datetime import datetime, timedelta
-
-            import akshare as ak
-
-            dt = datetime.strptime(trade_date, "%Y-%m-%d")
-            start_str = dt.strftime("%Y%m%d")
-            end_str = (dt + timedelta(days=days + 10)).strftime("%Y%m%d")
-
-            df = ak.index_zh_a_hist(
-                symbol="000300",
-                period="daily",
-                start_date=start_str,
-                end_date=end_str,
-            )
-            if df is None or df.empty or len(df) < 2:
-                return None
-
-            df["日期"] = df["日期"].astype(str)
-            df = df[df["日期"] >= trade_date].reset_index(drop=True)
-            if len(df) < 2:
-                return None
-
-            entry_price = float(df.iloc[0]["收盘"])
-            target_idx = min(days, len(df) - 1)
-            exit_price = float(df.iloc[target_idx]["收盘"])
-
-            if entry_price <= 0:
-                return None
-            return (exit_price - entry_price) / entry_price
-
-        except ImportError:
-            logger.debug("akshare not available for benchmark return.")
+            start = datetime.strptime(trade_date, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            logger.debug("Invalid trade_date %r; cannot compute forward return.", trade_date)
             return None
+
+        # 交易日可能稀疏（长假最长可达十余个自然日），窗口留足冗余。
+        end = start + timedelta(days=days * 2 + 30)
+        start_str = start.strftime("%Y%m%d")
+        end_str = end.strftime("%Y%m%d")
+
+        try:
+            if index:
+                df = ak.index_zh_a_hist(symbol="000300", period="daily", start_date=start_str, end_date=end_str)
+            else:
+                df = ak.stock_zh_a_hist(
+                    symbol=ticker,
+                    period="daily",
+                    start_date=start_str,
+                    end_date=end_str,
+                    adjust="qfq",
+                )
         except Exception as exc:
-            logger.debug("Failed to fetch benchmark return: %s", exc)
+            logger.debug("Failed to fetch bars for %s: %s", ticker or "000300", exc)
             return None
+
+        frame = self._settled_bars(df, trade_date, days)
+        if frame is None:
+            return None
+
+        entry_price = float(frame.iloc[0]["收盘"])
+        exit_price = float(frame.iloc[days]["收盘"])
+        exit_date = str(frame.iloc[days]["日期"])
+        if entry_price <= 0:
+            return None
+        return (exit_price - entry_price) / entry_price, exit_date
+
+    @staticmethod
+    def _settled_bars(df: Any, trade_date: str, days: int) -> Any | None:
+        """把原始行情裁剪成「从决策日起、已收盘、连续」的交易日序列。
+
+        返回 ``None`` 表示数据不可用，或已收盘交易日不足 ``days + 1`` 根 ——
+        持有窗口还没走完。
+        """
+        from datetime import datetime
+
+        if df is None or getattr(df, "empty", True):
+            return None
+        if "日期" not in df.columns or "收盘" not in df.columns:
+            return None
+
+        frame = df.copy()
+        frame["日期"] = frame["日期"].astype(str).str.slice(0, 10)
+        frame = frame[frame["日期"] >= trade_date]
+        # 当天的 K 线可能还没落定（盘中/收盘价未定），一律不用。
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        frame = frame[frame["日期"] < today_str]
+        frame = frame.sort_values("日期").reset_index(drop=True)
+
+        if len(frame) < days + 1:
+            return None
+        return frame
 
     # ════════════════════════════════════════════════════════════
     #  Internal: helpers

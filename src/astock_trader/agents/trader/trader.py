@@ -55,15 +55,34 @@ def create_trader(llm: Any) -> Callable:
         """
         company = company_name or state.get("company_of_interest", "目标股票")
         investment_plan = state.get("investment_plan", "暂无投资方案")
+        # 研究方案只给了方向和策略，真实价位结构（当前价、支撑压力、ATR）在技术面
+        # 报告里。不把报告给交易员，入场价/止损价就只能靠编。
+        market_report = str(state.get("market_report") or "").strip()
+
+        if market_report:
+            report_section = f"### 技术面报告（价位锚定的依据）\n{market_report}\n\n"
+            grounding = (
+                "入场价与止损价必须锚定上面技术面报告里的真实价格结构 —— 当前价、"
+                "支撑/压力位、ATR、近期波动幅度；研究方案只用来决定方向和策略。\n"
+            )
+        else:
+            report_section = ""
+            grounding = ""
 
         prompt_text = (
             f"你是专业交易员，需要基于研究员的投资方案，为 **{company}** 制定具体的交易执行计划。\n\n"
             f"### 研究员投资方案\n{investment_plan}\n\n"
+            f"{report_section}"
+            "### 价位填写规则\n"
+            f"{grounding}"
+            "入场价和止损价都是**绝对价格**（人民币元），例如 1523.5。不要填百分比、"
+            "价格区间，或「现价下方 3%」这类相对描述 —— 请先把相对位置换算成具体价格；"
+            "换算不出来就留空，宁可空缺也不要填一个不是价格的值。\n\n"
             "请制定交易计划，包括：\n"
             "1. 交易动作（买入/持有/卖出）\n"
             "2. 交易理由（简明扼要说明执行逻辑）\n"
-            "3. 建议入场价（如适用）\n"
-            "4. 止损价（如适用）\n"
+            "3. 建议入场价（如适用，绝对价格）\n"
+            "4. 止损价（如适用，绝对价格）\n"
             "5. 仓位建议（如适用，给出具体比例或金额）\n\n"
             "请用中文输出，计划应具体、可执行。"
         )

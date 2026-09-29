@@ -9,6 +9,16 @@
 
 系统会自动轮转：保留最近的 resolved 条目（同标的最多 5 条 + 跨标的最多 3 条）
 以及所有 pending 条目。
+
+时间点门控
+----------
+反思条目里记录了 ``resolved_date`` —— 结局**落地**的那一天（即计算收益所用到
+的最后一根 K 线的日期）。:meth:`TradingMemoryLog.get_past_context` 接受
+``as_of``：只有 ``resolved_date <= as_of`` 的条目才会被注入 prompt，避免历史
+日期分析学到「未来才发生」的教训（上游 issue #1251 的同类修复）。
+
+没有 ``resolved_date`` 的老条目在 ``as_of`` 查询下**保守排除**；实时运行
+（``as_of=None``）不受影响。
 """
 
 from __future__ import annotations
@@ -20,6 +30,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from astock_trader.point_in_time import normalize_date, within_as_of
+
 logger = logging.getLogger(__name__)
 
 # 默认记忆文件路径
@@ -28,6 +40,17 @@ _DEFAULT_MEMORY_FILE = "trading_memory.log"
 
 _ENTRY_SEPARATOR = "<!-- ENTRY_END -->"
 _HEADER_PATTERN = re.compile(r"\[(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\]")
+
+
+def _extract_resolved_date(reflection: dict[str, Any] | None) -> str | None:
+    """从 REFLECTION 块里取出结局落地日（``resolved_date``）。
+
+    该字段是时间点门控的比较键。取不出来时返回 ``None`` —— 调用方按「不可知」
+    处理，而不是猜一个日期。
+    """
+    if not isinstance(reflection, dict):
+        return None
+    return normalize_date(reflection.get("resolved_date"))
 
 
 class TradingMemoryLog:
@@ -93,6 +116,7 @@ class TradingMemoryLog:
         ticker: str,
         n_same: int = 5,
         n_cross: int = 3,
+        as_of: str | None = None,
     ) -> str:
         """获取历史决策上下文，用于注入到 Prompt 中。
 
@@ -104,14 +128,34 @@ class TradingMemoryLog:
             同一标的最近的已解决条目数。
         n_cross : int
             其他标的最近的已解决条目数。
+        as_of : str | None
+            本次运行的分析日（``YYYY-MM-DD``）。给出时只放行
+            ``resolved_date <= as_of`` 的条目，即「结局在分析日之前已经落地」
+            的教训。``None`` 表示实时运行，不做时间过滤。
 
         Returns
         -------
         str
             格式化的历史上下文文本。
+
+        Notes
+        -----
+        没有记录 ``resolved_date`` 的老条目在 ``as_of`` 查询下会被排除：
+        回测里无法证明它当时已经可知，按保守方向处理。
         """
         entries = self._load_all_entries()
         resolved = [e for e in entries if not e["pending"]]
+
+        if as_of is not None:
+            kept = [e for e in resolved if within_as_of(e.get("resolved"), as_of)]
+            if len(kept) != len(resolved):
+                logger.debug(
+                    "时间点门控：as_of=%s，%d/%d 条已解决条目被放行。",
+                    as_of,
+                    len(kept),
+                    len(resolved),
+                )
+            resolved = kept
 
         same_ticker = [e for e in resolved if e["ticker"] == ticker]
         cross_ticker = [e for e in resolved if e["ticker"] != ticker]
@@ -157,6 +201,16 @@ class TradingMemoryLog:
         -------
         int
             成功更新的条目数。
+
+        Notes
+        -----
+        ``resolved_date`` 是结局**落地**日（计算收益所用到最后一根 K 线的日期），
+        决定该条目能否被历史日期的分析看到。取值优先级：
+
+        1. ``upd["resolved_date"]``（调用方显式给出，推荐）
+        2. ``upd["reflection"]["resolved_date"]``
+        3. 都没有 → 记为未知并记一条 warning：条目仍然可用（实时运行可见），
+           但在带 ``as_of`` 的历史查询里会被保守排除。
         """
         entries = self._load_all_entries()
         updated_count = 0
@@ -165,7 +219,17 @@ class TradingMemoryLog:
         update_map: dict[tuple[str, str], dict[str, Any]] = {}
         for u in updates:
             key = (u["ticker"], u["trade_date"])
-            update_map[key] = u
+            reflection = dict(u.get("reflection") or {})
+            resolved_date = normalize_date(u.get("resolved_date") or reflection.get("resolved_date"))
+            if resolved_date is None:
+                logger.warning(
+                    "条目 %s@%s 未提供 resolved_date，历史日期查询将排除该教训。",
+                    u["ticker"],
+                    u["trade_date"],
+                )
+            else:
+                reflection["resolved_date"] = resolved_date
+            update_map[key] = {**u, "reflection": reflection}
 
         for entry in entries:
             if not entry["pending"]:
@@ -281,6 +345,8 @@ class TradingMemoryLog:
             "pending": pending,
             "decision": decision,
             "reflection": reflection,
+            # 结局落地日 —— 时间点门控的比较键；老条目没有该字段时为 None。
+            "resolved": _extract_resolved_date(reflection),
         }
 
     def _rewrite_all(self, entries: list[dict[str, Any]]) -> None:
@@ -345,4 +411,7 @@ class TradingMemoryLog:
                 parts.append(f"  结果: {reflection['outcome']}")
             if "lesson" in reflection:
                 parts.append(f"  教训: {reflection['lesson']}")
+        resolved = entry.get("resolved")
+        if resolved:
+            parts.append(f"  结局落地日: {resolved}")
         return "\n".join(parts)
