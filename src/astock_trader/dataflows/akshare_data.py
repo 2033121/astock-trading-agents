@@ -14,10 +14,16 @@ from typing import Annotated
 
 import pandas as pd
 
+from astock_trader.point_in_time import report_is_known
+
 try:
     import akshare as ak
 except ImportError:  # pragma: no cover
     ak = None  # type: ignore[assignment]
+
+# 历史运行下不下发的「当期快照」字段：市值随行情每日变化、股本随资本动作变化，
+# 取到的都是**运行当天**的值，无法证明分析日当时可知。
+_SNAPSHOT_INFO_KEYS = ("总市值", "流通市值", "总股本", "流通股")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -290,13 +296,18 @@ def get_indicators(
 
 def get_fundamentals(
     symbol: Annotated[str, "A-share stock symbol"],
-    curr_date: Annotated[str | None, "Reference date (optional, unused for latest snapshot)"] = None,
+    curr_date: Annotated[str | None, "Reference date 'YYYY-MM-DD'; None = live run"] = None,
 ) -> str:
     """Get company fundamental information: name, sector, market cap, PE, PB, ROE, etc.
 
     Combines ``ak.stock_individual_info_em`` (basic info) and
     ``ak.stock_financial_abstract_ths`` (financial summary from THS).
+
+    历史运行（``curr_date`` 非空）下按公告日／法定披露截止日过滤财报行，并隐去
+    市值、股本这类「运行当天」的快照字段 —— 报告期结束不等于可知，一季报 3-31
+    结束但最晚 4-30 才披露。
     """
+    historical = curr_date is not None
     lines: list[str] = [f"## Fundamentals — {symbol}\n"]
 
     # --- Basic info from EastMoney ---
@@ -304,24 +315,49 @@ def get_fundamentals(
     if err:
         lines.append(f"[WARN] Basic info unavailable: {err}")
     elif info_df is not None and not info_df.empty:
-        lines.append("### Company Info (EastMoney)\n")
+        body: list[str] = []
+        withheld: list[str] = []
         for _, row in info_df.iterrows():
             try:
                 key = str(row.iloc[0])
                 val = str(row.iloc[1])
-                lines.append(f"- **{key}**: {val}")
             except (IndexError, KeyError):
                 continue
+            if historical and any(k in key for k in _SNAPSHOT_INFO_KEYS):
+                withheld.append(key)
+                continue
+            body.append(f"- **{key}**: {val}")
+        if body:
+            lines.append("### Company Info (EastMoney)\n")
+            lines.extend(body)
+        if withheld:
+            lines.append(
+                f"\n> Point-in-time: as-of {curr_date} snapshot fields withheld "
+                f"({', '.join(withheld)}) — they reflect the run date, not the "
+                "analysis date. Use get_stock_data / get_indicators for as-of prices."
+            )
 
     # --- Financial abstract from THS ---
     fin_df, err2 = _safe_call(ak.stock_financial_abstract_ths, symbol=symbol)
     if err2:
         lines.append(f"\n[WARN] Financial abstract unavailable: {err2}")
     elif fin_df is not None and not fin_df.empty:
-        lines.append("\n### Financial Summary (THS)\n")
-        # Show the latest 2 reporting periods
-        show_df = fin_df.head(2).copy()
-        lines.append(_df_to_markdown(show_df, max_rows=4))
+        visible, dropped = _gate_reports(fin_df, curr_date)
+        if visible.empty:
+            lines.append(
+                f"\n### Financial Summary (THS)\n\n"
+                f"No reporting period was public as of {curr_date}; "
+                "the latest snapshot is withheld."
+            )
+        else:
+            lines.append("\n### Financial Summary (THS)\n")
+            if dropped:
+                lines.append(
+                    f"*(showing the latest periods public as of {curr_date}; {dropped} later period(s) withheld)*\n"
+                )
+            # Show the latest 2 reporting periods
+            show_df = visible.head(2).copy()
+            lines.append(_df_to_markdown(show_df, max_rows=4))
 
     if len(lines) <= 1:
         return f"get_fundamentals({symbol}): No fundamental data found."
@@ -332,11 +368,12 @@ def get_fundamentals(
 def get_balance_sheet(
     symbol: Annotated[str, "A-share stock symbol"],
     freq: Annotated[str, "'quarterly' or 'annual'"] = "quarterly",
-    curr_date: Annotated[str | None, "Reference date (optional)"] = None,
+    curr_date: Annotated[str | None, "Reference date 'YYYY-MM-DD'; None = live run"] = None,
 ) -> str:
     """Get the latest balance sheet data.
 
-    Uses ``ak.stock_balance_sheet_by_report_em``.
+    Uses ``ak.stock_balance_sheet_by_report_em``.  In a historical run only
+    report periods already public as of *curr_date* are considered.
     """
     df, err = _safe_call(ak.stock_balance_sheet_by_report_em, symbol=symbol)
     if err:
@@ -344,6 +381,10 @@ def get_balance_sheet(
 
     if df is None or df.empty:
         return f"get_balance_sheet({symbol}): No balance sheet data returned."
+
+    df, dropped = _gate_reports(df, curr_date)
+    if df.empty:
+        return f"get_balance_sheet({symbol}): No report was public as of {curr_date}; the latest snapshot is withheld."
 
     # If quarterly, keep the latest 1 report; if annual, filter by year-end
     if freq == "annual" and len(df) > 1:
@@ -361,6 +402,8 @@ def get_balance_sheet(
     # Take the latest report
     latest = df.head(1)
     header = f"## Balance Sheet — {symbol} (Latest {freq})\n\n"
+    if dropped:
+        header += f"*(as of {curr_date}: {dropped} later report(s) withheld)*\n\n"
 
     # Transpose for readability: one column per report
     records = []
@@ -375,11 +418,12 @@ def get_balance_sheet(
 def get_cashflow(
     symbol: Annotated[str, "A-share stock symbol"],
     freq: Annotated[str, "'quarterly' or 'annual'"] = "quarterly",
-    curr_date: Annotated[str | None, "Reference date (optional)"] = None,
+    curr_date: Annotated[str | None, "Reference date 'YYYY-MM-DD'; None = live run"] = None,
 ) -> str:
     """Get the latest cash flow statement.
 
-    Uses ``ak.stock_cash_flow_sheet_by_report_em``.
+    Uses ``ak.stock_cash_flow_sheet_by_report_em``.  In a historical run only
+    report periods already public as of *curr_date* are considered.
     """
     df, err = _safe_call(ak.stock_cash_flow_sheet_by_report_em, symbol=symbol)
     if err:
@@ -387,6 +431,10 @@ def get_cashflow(
 
     if df is None or df.empty:
         return f"get_cashflow({symbol}): No cash flow data returned."
+
+    df, dropped = _gate_reports(df, curr_date)
+    if df.empty:
+        return f"get_cashflow({symbol}): No report was public as of {curr_date}; the latest snapshot is withheld."
 
     if freq == "annual" and len(df) > 1:
         date_col = _find_date_column(df)
@@ -397,6 +445,8 @@ def get_cashflow(
 
     latest = df.head(1)
     header = f"## Cash Flow Statement — {symbol} (Latest {freq})\n\n"
+    if dropped:
+        header += f"*(as of {curr_date}: {dropped} later report(s) withheld)*\n\n"
 
     records = []
     for col in latest.columns:
@@ -410,11 +460,12 @@ def get_cashflow(
 def get_income_statement(
     symbol: Annotated[str, "A-share stock symbol"],
     freq: Annotated[str, "'quarterly' or 'annual'"] = "quarterly",
-    curr_date: Annotated[str | None, "Reference date (optional)"] = None,
+    curr_date: Annotated[str | None, "Reference date 'YYYY-MM-DD'; None = live run"] = None,
 ) -> str:
     """Get the latest income (profit) statement.
 
-    Uses ``ak.stock_profit_sheet_by_report_em``.
+    Uses ``ak.stock_profit_sheet_by_report_em``.  In a historical run only
+    report periods already public as of *curr_date* are considered.
     """
     df, err = _safe_call(ak.stock_profit_sheet_by_report_em, symbol=symbol)
     if err:
@@ -422,6 +473,12 @@ def get_income_statement(
 
     if df is None or df.empty:
         return f"get_income_statement({symbol}): No income statement data returned."
+
+    df, dropped = _gate_reports(df, curr_date)
+    if df.empty:
+        return (
+            f"get_income_statement({symbol}): No report was public as of {curr_date}; the latest snapshot is withheld."
+        )
 
     if freq == "annual" and len(df) > 1:
         date_col = _find_date_column(df)
@@ -432,6 +489,8 @@ def get_income_statement(
 
     latest = df.head(1)
     header = f"## Income Statement — {symbol} (Latest {freq})\n\n"
+    if dropped:
+        header += f"*(as of {curr_date}: {dropped} later report(s) withheld)*\n\n"
 
     records = []
     for col in latest.columns:
@@ -467,6 +526,66 @@ def _find_date_column(df: pd.DataFrame) -> str | None:
         if any(kw in cs for kw in ("日期", "date", "Date", "报告", "REPORT_DATE")):
             return c
     return None
+
+
+# 报告期列 / 公告日期列的关键词，按优先级排列。财报帧的列名各家不一致：
+# 同花顺摘要给「报告期」，东财报表给 ``REPORT_DATE``，Tushare 给 ``end_date``。
+_REPORT_PERIOD_HINTS = ("报告期", "report_date", "报告日", "end_date")
+_ANNOUNCEMENT_HINTS = ("公告日期", "notice_date", "实际公告日", "f_ann_date", "ann_date", "update_date")
+
+
+def _find_report_period_column(df: pd.DataFrame) -> str | None:
+    """找到「报告期」列（期末日）。"""
+    return _find_column_by_hints(df, _REPORT_PERIOD_HINTS)
+
+
+def _find_announcement_column(df: pd.DataFrame) -> str | None:
+    """找到「公告日期」列（该报告实际公开的日期），没有则返回 ``None``。"""
+    return _find_column_by_hints(df, _ANNOUNCEMENT_HINTS)
+
+
+def _find_column_by_hints(df: pd.DataFrame, hints: tuple[str, ...]) -> str | None:
+    for hint in hints:
+        for c in df.columns:
+            if hint in str(c).lower():
+                return c
+    return None
+
+
+def _gate_reports(df: pd.DataFrame, curr_date: str | None) -> tuple[pd.DataFrame, int]:
+    """Drop report rows that were not yet public on *curr_date*.
+
+    「报告期结束」不等于「可知」：一季报 3-31 结束、最晚 4-30 才披露。有公告日期
+    列就按公告日期判，否则退回法定披露截止日（见 :mod:`astock_trader.point_in_time`）。
+
+    Returns
+    -------
+    tuple[pandas.DataFrame, int]
+        ``(放行后的帧, 被剔除的行数)``。``curr_date`` 为 ``None``（实时运行）时
+        原样返回。**认不出报告期列时整帧剔除** —— 无法证明任何一行在分析日之前
+        可知，宁可不给。
+    """
+    if curr_date is None or df is None or df.empty:
+        return df, 0
+
+    period_col = _find_report_period_column(df)
+    if period_col is None:
+        return df.iloc[0:0], len(df)
+
+    ann_col = _find_announcement_column(df)
+    mask = pd.Series(
+        [
+            report_is_known(
+                row[period_col],
+                curr_date,
+                ann_date=row[ann_col] if ann_col is not None else None,
+            )
+            for _, row in df.iterrows()
+        ],
+        index=df.index,
+        dtype=bool,
+    )
+    return df[mask], int((~mask).sum())
 
 
 def get_industry_peers(

@@ -27,6 +27,7 @@ from typing import Annotated, Any
 import requests
 
 from astock_trader.dataflows.errors import VendorError, VendorNotConfiguredError, VendorRateLimitError
+from astock_trader.point_in_time import report_is_known, within_as_of
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,87 @@ def _data_to_markdown(data: dict, title: str = "", max_rows: int = 30) -> str:
         lines.append(f"\n*（共 {len(items)} 行，仅显示前 {max_rows} 行）*")
 
     return "\n".join(lines)
+
+
+def _gate_report_rows(
+    data: dict,
+    curr_date: str | None,
+    *,
+    period_field: str = "end_date",
+) -> tuple[dict, int]:
+    """按披露日过滤 Tushare ``{fields, items}`` 里的财报行。
+
+    Tushare 的财报接口同时给 ``end_date``（报告期）和 ``ann_date`` /
+    ``f_ann_date``（公告日期），所以这里能按**公告日期**精确判定，不必退到法定
+    披露截止日。返回 ``(过滤后的 data, 被剔除的行数)``；``curr_date`` 为 ``None``
+    （实时运行）时原样返回。认不出报告期字段时**整批剔除** —— 无法证明可知。
+    """
+    if curr_date is None:
+        return data, 0
+
+    fields = data.get("fields", [])
+    items = data.get("items", [])
+    if not fields or not items:
+        return data, 0
+
+    index = {str(name): i for i, name in enumerate(fields)}
+    if period_field not in index:
+        return {**data, "items": []}, len(items)
+
+    period_idx = index[period_field]
+    ann_idx = next((index[name] for name in ("f_ann_date", "ann_date") if name in index), None)
+
+    kept = [
+        row
+        for row in items
+        if report_is_known(
+            row[period_idx],
+            curr_date,
+            ann_date=row[ann_idx] if ann_idx is not None and ann_idx < len(row) else None,
+        )
+    ]
+    return {**data, "items": kept}, len(items) - len(kept)
+
+
+def _gate_daily_rows(data: dict, curr_date: str | None, *, field: str = "trade_date") -> tuple[dict, int]:
+    """按「日期不晚于分析日」过滤 ``{fields, items}`` 行（行情/每日指标类）。
+
+    和 :func:`_gate_report_rows` 的区别：这里给的是**日期本身**（交易日），不是
+    报告期，所以直接比大小，不需要披露滞后的判定。
+    """
+    if curr_date is None:
+        return data, 0
+
+    fields = data.get("fields", [])
+    items = data.get("items", [])
+    if not fields or not items:
+        return data, 0
+
+    index = {str(name): i for i, name in enumerate(fields)}
+    if field not in index:
+        return {**data, "items": []}, len(items)
+
+    col = index[field]
+    kept = [row for row in items if within_as_of(row[col], curr_date)]
+    return {**data, "items": kept}, len(items) - len(kept)
+
+
+def _filtered_report_section(
+    data: dict,
+    title: str,
+    curr_date: str | None,
+    *,
+    period_field: str = "end_date",
+    max_rows: int = 30,
+) -> str:
+    """渲染一份财报表格；历史运行下先过滤，并标注剔除了多少行。"""
+    data, dropped = _gate_report_rows(data, curr_date, period_field=period_field)
+    if dropped and not data.get("items"):
+        return f"### {title}\n\n（{curr_date} 之前无可用的报告期；最新快照已隐去，避免前视偏差）"
+    table = _data_to_markdown(data, title, max_rows=max_rows)
+    if dropped:
+        table += f"\n\n*（as of {curr_date}：{dropped} 个更晚的报告期已隐去）*"
+    return table
 
 
 def _format_cell(field: str, value: Any) -> str:
@@ -466,6 +548,7 @@ def get_income(
     symbol: Annotated[str, "A股股票代码"],
     start_date: Annotated[str, "报告期开始 yyyy-mm-dd"] = "",
     end_date: Annotated[str, "报告期结束 yyyy-mm-dd"] = "",
+    curr_date: Annotated[str | None, "分析日；None=实时运行"] = None,
 ) -> str:
     """获取利润表数据（Tushare 结构化数据）。"""
     ts_code = _to_ts_code(symbol)
@@ -476,7 +559,8 @@ def get_income(
         params["end_date"] = end_date.replace("-", "")
 
     data = _call_api("income", params)
-    return f"# {symbol} 利润表（Tushare）\n\n{_data_to_markdown(data, f'{symbol} 利润表')}"
+    section = _filtered_report_section(data, f"{symbol} 利润表", curr_date)
+    return f"# {symbol} 利润表（Tushare）\n\n{section}"
 
 
 @_safe_call
@@ -484,6 +568,7 @@ def get_balance_sheet(
     symbol: Annotated[str, "A股股票代码"],
     start_date: Annotated[str, "报告期开始 yyyy-mm-dd"] = "",
     end_date: Annotated[str, "报告期结束 yyyy-mm-dd"] = "",
+    curr_date: Annotated[str | None, "分析日；None=实时运行"] = None,
 ) -> str:
     """获取资产负债表（Tushare 结构化数据）。"""
     ts_code = _to_ts_code(symbol)
@@ -494,7 +579,8 @@ def get_balance_sheet(
         params["end_date"] = end_date.replace("-", "")
 
     data = _call_api("balancesheet", params)
-    return f"# {symbol} 资产负债表（Tushare）\n\n{_data_to_markdown(data, f'{symbol} 资产负债表')}"
+    section = _filtered_report_section(data, f"{symbol} 资产负债表", curr_date)
+    return f"# {symbol} 资产负债表（Tushare）\n\n{section}"
 
 
 @_safe_call
@@ -502,6 +588,7 @@ def get_cashflow(
     symbol: Annotated[str, "A股股票代码"],
     start_date: Annotated[str, "报告期开始 yyyy-mm-dd"] = "",
     end_date: Annotated[str, "报告期结束 yyyy-mm-dd"] = "",
+    curr_date: Annotated[str | None, "分析日；None=实时运行"] = None,
 ) -> str:
     """获取现金流量表（Tushare 结构化数据）。"""
     ts_code = _to_ts_code(symbol)
@@ -512,7 +599,8 @@ def get_cashflow(
         params["end_date"] = end_date.replace("-", "")
 
     data = _call_api("cashflow", params)
-    return f"# {symbol} 现金流量表（Tushare）\n\n{_data_to_markdown(data, f'{symbol} 现金流量表')}"
+    section = _filtered_report_section(data, f"{symbol} 现金流量表", curr_date)
+    return f"# {symbol} 现金流量表（Tushare）\n\n{section}"
 
 
 @_safe_call
@@ -691,9 +779,13 @@ def get_news(
 @_safe_call
 def get_fundamentals(
     symbol: Annotated[str, "A股股票代码，如 000001 或 600519"],
-    curr_date: Annotated[str, "当前日期（可选）"] = None,
+    curr_date: Annotated[str | None, "分析日；None=实时运行"] = None,
 ) -> str:
-    """通过 Tushare 获取公司基本面综合数据（每日指标 + 最新财务指标）。"""
+    """通过 Tushare 获取公司基本面综合数据（每日指标 + 最新财务指标）。
+
+    历史运行（``curr_date`` 非空）下：每日估值指标按交易日门控，财务指标按
+    公告日期门控 —— 报告期结束不等于可知。
+    """
     ts_code = _to_ts_code(symbol)
 
     parts = [f"# {symbol} 基本面数据（Tushare）", ""]
@@ -701,16 +793,20 @@ def get_fundamentals(
     # 1. 每日基本面指标（最近5个交易日）
     try:
         daily_data = _call_api("daily_basic", {"ts_code": ts_code})
-        parts.append(_data_to_markdown(daily_data, "每日估值指标", max_rows=5))
+        daily_data, dropped_daily = _gate_daily_rows(daily_data, curr_date)
+        if dropped_daily and not daily_data.get("items"):
+            parts.append(f"### 每日估值指标\n\n（{curr_date} 之前无可用的估值数据；最新快照已隐去，避免前视偏差）")
+        else:
+            parts.append(_data_to_markdown(daily_data, "每日估值指标", max_rows=5))
     except Exception as e:
         parts.append(f"每日指标获取失败: {e}")
 
     parts.append("")
 
-    # 2. 最新财务指标（最近2期）
+    # 2. 最新财务指标（最近2期）—— 按公告日期过滤
     try:
         fina_data = _call_api("fina_indicator", {"ts_code": ts_code})
-        parts.append(_data_to_markdown(fina_data, "财务指标", max_rows=2))
+        parts.append(_filtered_report_section(fina_data, "财务指标", curr_date, max_rows=2))
     except Exception as e:
         parts.append(f"财务指标获取失败: {e}")
 

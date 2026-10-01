@@ -13,6 +13,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - **向量记忆**：`MarketMemory.search/search_by_ticker` 新增 `as_of`。TF-IDF 后端在**排序前**过滤候选（`top_k` 仍由历史记录填满）；chroma 后端下发 `where={"date": {"$lte": as_of}}` 并在返回后兜底再过滤一次（后端忽略该条件时宁可少返回也不放行未来记录）；「直接扫元数据」的兜底路径同样受门控
   - **反思闭环持有窗口改为按交易日判定**：结算要求已出现 `days + 1` 根**已收盘** K 线，不足则条目保持 pending。原实现用 `timedelta(days=5)` 自然日判定 + `target_idx = min(days, len(df)-1)` 取平仓价，长假期间会把 **1 日收益写成「5日收益」** 并作为教训存入记忆；平仓价一律取严格早于今天的 K 线（当日 K 线可能还在变）；基准拉不到时 `alpha_return` 记为 `None`、文案写「超额未获取」，不再假装超额为 0（上游同类修复）
   - **新闻窗口**：`eastmoney_news` 的两处泄漏修掉 —— `get_news` 日期解析失败时原先 `pass` 返回**全部**新闻，`get_global_news` 原先只在筛选结果非空时才采用过滤、窗口筛空即退回全量。现在统一用 `in_window`，比较**北京时间的日历天**（naive 发布时间按 CST 解释，避免 UTC 偏移 8 小时把「次日凌晨」的稿件漏进窗口）；无发布时间的条目只在实时窗口保留（上游 #1126 / #1220）
+  - **基本面当期快照泄漏（A9，上游 #1300）**：`get_fundamentals` / `get_balance_sheet` / `get_cashflow` / `get_income_statement` 四个工具此前**完全不接收分析日**（`curr_date` 标注为 *unused*），历史运行一律拿到「最新财报 + 运行当天市值快照」。难点是**报告期结束 ≠ 可知**：一季报报告期 3-31、最晚 4-30 才披露，直接比报告期最多能放进一个月后的信息。现在按 `report_is_known(period_end, as_of, ann_date=...)` 门控 —— 有公告日期按公告日期精确判定（Tushare `ann_date` / 东财 `NOTICE_DATE`），没有就退回**法定披露截止日**（一季报/年报 4-30、半年报 8-31、三季报 10-31，年报跨次年），认不出报告期列则**整帧剔除**
+    - **Tushare**：结构化财报按 `ann_date` 过滤，`daily_basic` 按 `trade_date` 过滤
+    - **akshare**：财报/报表按报告期 + 公告日期过滤，滤空时明确写「No report was public as of <日期>；the latest snapshot is withheld」而不是给最新值；「总市值/流通市值/总股本/流通股」这类**运行当天的快照字段**在历史运行下隐去并留下说明（需要价位改用 `get_stock_data` / `get_indicators` 取该日行情）
+    - **妙想（MX）**：自然语言查询返回的是渲染好的表格，**没有可判定的报告期字段**，证明不了就不放行 —— 历史运行直接抛 `VendorError`，由路由换到能按报告期过滤的数据源（这也顺带验证了 A8 的换源契约）
+    - **运行日期由服务端注入，不交给模型**：四个工具的 `trade_date` 参数改用 `InjectedState("trade_date")` 从图状态注入，**模型看不到也改不了** —— 模型漏填一次，历史运行就退回最新快照，门控必须由运行侧保证而非靠 prompt 提醒
+    - **实时运行不门控**：`run_as_of(trade_date)` 仅在分析日**严格早于今天**时返回该日期，否则返回 `None`。实时运行若也按法定截止日卡，会误伤「刚披露但还没到截止日」的报告（9-30 三季报 10-02 披露、截止日却是 10-31）
 - **评级解析不出来时报「待复核」，不再静默降级成「持有」** (`agents/utils/rating.py` + `graph/signal_processing.py`)：新增 `extract_rating()`（无法确定返回 `None`）与 `RATING_REVIEW = "待复核"`；`parse_rating()` 保留旧的「总有返回值」语义供历史调用点使用。同时修掉两处误判：标签命中但取值不在五级刻度内（如 `评级: 观望`）不再退到全文搜索，避免从「买入/增持/持有/减持/卖出」刻度说明里捞出一个凭空造的评级；英文关键词改用词干+变形匹配（`buying` 仍识别，`buyer`/`seller` 不再误判）。CLI 评级色、HTML 报告徽章均补上「待复核」样式（上游 #1170）
 - **数据源软失败不再阻断 fallback 链** (`dataflows/interface.py` + 新增 `dataflows/errors.py`)：`route_to_vendor` 此前把任何返回值都当成成功直接返回 —— 妙想配额用尽返回 `"[ERROR] ..."` 时，链上的 Tushare / 东方财富 / akshare 根本不会被尝试，Agent 拿到一句错误文本并把它当成数据。现在换源有两个触发条件：抛异常（按 `VendorError` 子类分类）或返回 `[ERROR]` 串。新增 `VendorError` / `NoMarketDataError` / `VendorRateLimitError` / `VendorNotConfiguredError` 层级（类型数量 = 路由层的不同反应数量），缺 key 降为 debug 级日志、限流保持 warning；`mx_data`（状态码 113/114、传输异常）、`tushare_data`（缺 token、积分/频次受限）已迁移为类型化抛错
 - **交易员价位锚定** (`agents/trader/trader.py`)：把技术面报告喂给 Trader（此前只给研究方案，入场价/止损价只能靠编），并要求入场价/止损价填**绝对价格**（人民币元）——不填百分比、区间或「现价下方 3%」这类相对描述，换算不出来就留空（上游 #1167 / #1288）
@@ -20,9 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **时间点门控模块** (`point_in_time.py`)：`normalize_date` / `within_as_of` / `in_window` / `window_reaches_present` / `to_local` + `CST` 常量。保守方向统一为「证明不了它在分析日之前可知，就不放行」；`CST` 用固定 UTC+8 而非 `zoneinfo`（Windows 缺 IANA 数据库时 `ZoneInfo("Asia/Shanghai")` 会直接抛异常）
-- **`docs/前视偏差防护.md`**：四道门的判据、数据源错误层级与换源契约、新增数据源检查清单、**已知缺口**（基本面当期快照泄漏 A9 等）与上游提交对照表
-- 新增 7 个专项测试文件 `tests/test_point_in_time.py`、`test_memory_pointintime.py`、`test_market_memory_pointintime.py`、`test_reflection_holding_window.py`、`test_news_lookahead.py`、`test_dataflows_vendor_errors.py`、`test_agent_prompt_grounding.py`，并为评级严格性追加用例；全套 **488 项通过**（原 327 项），`ruff check` + `ruff format --check` 双绿
+- **时间点门控模块** (`point_in_time.py`)：`normalize_date` / `within_as_of` / `in_window` / `window_reaches_present` / `to_local` / `report_is_known` / `statutory_disclosure_deadline` / `run_as_of` + `CST` 常量。保守方向统一为「证明不了它在分析日之前可知，就不放行」；`CST` 用固定 UTC+8 而非 `zoneinfo`（Windows 缺 IANA 数据库时 `ZoneInfo("Asia/Shanghai")` 会直接抛异常）
+- **`docs/前视偏差防护.md`**：五道门的判据、数据源错误层级与换源契约、新增数据源检查清单（含财报类「报告期结束 ≠ 可知」一问）、**已知缺口**与上游提交对照表
+- 新增 8 个专项测试文件 `tests/test_point_in_time.py`、`test_memory_pointintime.py`、`test_market_memory_pointintime.py`、`test_reflection_holding_window.py`、`test_news_lookahead.py`、`test_fundamentals_pointintime.py`、`test_dataflows_vendor_errors.py`、`test_agent_prompt_grounding.py`，并为评级严格性追加用例；全套 **534 项通过**（原 327 项），`ruff check` + `ruff format --check` 双绿
 
 - **外部校准接入（Headline Arena 试点支撑）** (`external_calibration/` + `scripts/external_calibration.py` + `docs/外部校准接入.md`)：给反思闭环补一份**不由自己运营**的机械结算参照（issue #1）
   - `arena_client.py`：只读 REST 客户端，对接官方公开端点（`/eval/agents/{id}/predictions|calibration|scorecard`，无需登录）；凭据只从环境变量读取、绝不落盘，无凭据时全链路优雅降级为 `None` 且绝不抛异常（网络/HTTP 4xx-5xx/非 JSON/结构异常全部覆盖）；实机验证发现平台前置网关对缺少 `User-Agent` 的请求返回 403，客户端已统一发送

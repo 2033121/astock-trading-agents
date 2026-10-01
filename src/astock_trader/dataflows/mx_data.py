@@ -238,12 +238,31 @@ def _parse_search_results(result: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _reject_point_in_time(curr_date: str | None, what: str) -> None:
+    """历史运行下拒绝出数 —— 妙想给不出可判定的时点快照。
+
+    妙想是自然语言查询接口，返回的是渲染好的表格，没有结构化的报告期／公告日期
+    字段，因此**无法证明**返回的数据在分析日之前已经可知。按「证明不了就不放行」
+    的原则这里直接抛 :class:`VendorError`，让路由层换到能按报告期过滤的数据源
+    （Tushare / akshare），而不是把运行当天的快照当成历史数据喂给模型。
+
+    ``curr_date`` 为 ``None``（实时运行）时不做任何限制。
+    """
+    if curr_date is None:
+        return
+    raise VendorError(
+        f"妙想接口无法提供 {curr_date} 的时点{what}快照（自然语言查询结果无可判定的报告期），"
+        "已拒绝返回当期数据；请换用支持按报告期过滤的数据源。"
+    )
+
+
 @_safe_call
 def get_fundamentals(
     symbol: Annotated[str, "A股股票代码，如 000001 或 600519"],
-    curr_date: Annotated[str, "当前日期（可选）"] = None,
+    curr_date: Annotated[str | None, "分析日；None=实时运行"] = None,
 ) -> str:
     """通过妙想 API 查询公司基本面数据（自然语言查询）。"""
+    _reject_point_in_time(curr_date, "基本面")
     query = f"{symbol} 公司基本面 市值 PE PB ROE 营收 净利润 主营业务"
     resp = requests.post(
         f"{BASE_URL}/finskillshub/api/claw/query",
@@ -259,9 +278,10 @@ def get_fundamentals(
 def get_balance_sheet(
     symbol: Annotated[str, "A股股票代码"],
     freq: Annotated[str, "频率 annual/quarterly"] = "quarterly",
-    curr_date: Annotated[str, "当前日期"] = None,
+    curr_date: Annotated[str | None, "分析日；None=实时运行"] = None,
 ) -> str:
     """通过妙想 API 查询资产负债表。"""
+    _reject_point_in_time(curr_date, "资产负债表")
     freq_cn = "季度" if freq == "quarterly" else "年度"
     query = f"{symbol} {freq_cn}资产负债表 总资产 总负债 股东权益 流动资产 流动负债"
     resp = requests.post(
@@ -279,9 +299,10 @@ def get_balance_sheet(
 def get_cashflow(
     symbol: Annotated[str, "A股股票代码"],
     freq: Annotated[str, "频率 annual/quarterly"] = "quarterly",
-    curr_date: Annotated[str, "当前日期"] = None,
+    curr_date: Annotated[str | None, "分析日；None=实时运行"] = None,
 ) -> str:
     """通过妙想 API 查询现金流量表。"""
+    _reject_point_in_time(curr_date, "现金流量表")
     freq_cn = "季度" if freq == "quarterly" else "年度"
     query = f"{symbol} {freq_cn}现金流量表 经营活动 投资活动 筹资活动 现金净增加"
     resp = requests.post(
@@ -299,9 +320,10 @@ def get_cashflow(
 def get_income_statement(
     symbol: Annotated[str, "A股股票代码"],
     freq: Annotated[str, "频率 annual/quarterly"] = "quarterly",
-    curr_date: Annotated[str, "当前日期"] = None,
+    curr_date: Annotated[str | None, "分析日；None=实时运行"] = None,
 ) -> str:
     """通过妙想 API 查询利润表。"""
+    _reject_point_in_time(curr_date, "利润表")
     freq_cn = "季度" if freq == "quarterly" else "年度"
     query = f"{symbol} {freq_cn}利润表 营业收入 营业成本 毛利润 净利润 每股收益"
     resp = requests.post(

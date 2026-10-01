@@ -13,6 +13,9 @@ from astock_trader.point_in_time import (
     CST,
     in_window,
     normalize_date,
+    report_is_known,
+    run_as_of,
+    statutory_disclosure_deadline,
     to_local,
     window_reaches_present,
     within_as_of,
@@ -178,3 +181,105 @@ class TestInWindow:
         """带时区的时间戳按自身时区换算，不受北京时间假设影响。"""
         # 2025-05-08 00:30 UTC 已经是 end(05-07) 之后
         assert in_window(datetime(2025, 5, 8, 0, 30, tzinfo=timezone.utc), "2025-05-01", "2025-05-07") is False
+
+
+# ────────────────────────────────────────────────────────────────
+#  statutory_disclosure_deadline
+# ────────────────────────────────────────────────────────────────
+
+
+class TestStatutoryDisclosureDeadline:
+    """定期报告的法定披露截止日 —— 该期报告最晚何时可知。"""
+
+    def test_q1_deadline_is_april_30(self):
+        assert statutory_disclosure_deadline("2025-03-31") == "2025-04-30"
+
+    def test_half_year_deadline_is_august_31(self):
+        assert statutory_disclosure_deadline("2025-06-30") == "2025-08-31"
+
+    def test_q3_deadline_is_october_31(self):
+        assert statutory_disclosure_deadline("2025-09-30") == "2025-10-31"
+
+    def test_annual_deadline_is_next_year_april_30(self):
+        """年报跨年：2024 年年报最晚 2025-04-30 披露。"""
+        assert statutory_disclosure_deadline("2024-12-31") == "2025-04-30"
+
+    def test_non_standard_period_end_returns_none(self):
+        """非标准报告期末（如 5-15）没有法定截止日可言。"""
+        assert statutory_disclosure_deadline("2025-05-15") is None
+
+    def test_unparseable_returns_none(self):
+        assert statutory_disclosure_deadline("不是日期") is None
+
+
+# ────────────────────────────────────────────────────────────────
+#  report_is_known
+# ────────────────────────────────────────────────────────────────
+
+
+class TestReportIsKnown:
+    """财报在分析日是否已公开 —— 报告期结束 ≠ 可知。"""
+
+    def test_none_as_of_disables_filter(self):
+        assert report_is_known("2025-03-31", None) is True
+
+    def test_period_end_alone_is_not_enough(self):
+        """一季报 3-31 结束，但 4-15 时还没到截止日（4-30），不能放行。"""
+        assert report_is_known("2025-03-31", "2025-04-15") is False
+
+    def test_after_statutory_deadline_is_known(self):
+        assert report_is_known("2025-03-31", "2025-04-30") is True
+        assert report_is_known("2025-03-31", "2025-05-01") is True
+
+    def test_annual_needs_next_year_may(self):
+        assert report_is_known("2024-12-31", "2025-03-01") is False
+        assert report_is_known("2024-12-31", "2025-05-01") is True
+
+    def test_announcement_date_is_precise(self):
+        """有公告日期就按公告日期：早于截止日披露也能放行。"""
+        assert report_is_known("2025-03-31", "2025-04-12", ann_date="2025-04-10") is True
+
+    def test_announcement_date_after_as_of_is_rejected(self):
+        """公告日期晚于分析日：即便报告期已经过去也不放行。"""
+        assert report_is_known("2025-03-31", "2025-04-12", ann_date="2025-04-20") is False
+
+    def test_announcement_date_is_not_relaxed_by_earlier_deadline(self):
+        """公告日期存在时只认它，不被更晚的法定截止日放宽。"""
+        assert report_is_known("2025-03-31", "2025-04-15", ann_date="2025-06-01") is False
+
+    def test_unparseable_announcement_falls_back_to_deadline(self):
+        assert report_is_known("2025-03-31", "2025-05-01", ann_date="待定") is True
+
+    def test_unknown_period_is_rejected(self):
+        """认不出报告期：无法证明当时可知，保守排除。"""
+        assert report_is_known("", "2025-05-01") is False
+
+    def test_unparseable_as_of_rejects_everything(self):
+        assert report_is_known("2025-03-31", "不是日期") is False
+
+
+# ────────────────────────────────────────────────────────────────
+#  run_as_of
+# ────────────────────────────────────────────────────────────────
+
+
+class TestRunAsOf:
+    """运行日期 → 数据门控 as_of：历史运行才门控，实时运行不门控。"""
+
+    def test_past_date_is_historical(self):
+        assert run_as_of("2025-06-01", today=date(2026, 10, 2)) == "2025-06-01"
+
+    def test_today_is_live(self):
+        """实时运行不门控：数据源只会返回已披露的报告，再卡截止日会误伤新报告。"""
+        assert run_as_of("2026-10-02", today=date(2026, 10, 2)) is None
+
+    def test_future_date_is_live(self):
+        assert run_as_of("2026-10-03", today=date(2026, 10, 2)) is None
+
+    def test_compact_format_is_normalized(self):
+        assert run_as_of("20250601", today=date(2026, 10, 2)) == "2025-06-01"
+
+    def test_unparseable_date_is_live(self):
+        """认不出运行日期时不引入额外过滤，避免把所有数据挡掉。"""
+        assert run_as_of("", today=date(2026, 10, 2)) is None
+        assert run_as_of("今天", today=date(2026, 10, 2)) is None
