@@ -22,6 +22,7 @@ nav:
   - Token 控制改进方案: Token控制改进方案.md
   - 前视偏差防护: 前视偏差防护.md
   - 外部校准接入: 外部校准接入.md
+  - 监控层与数据源扩展: 监控层与数据源扩展.md
   - 改进路线图: 改进路线图.md
 markdown_extensions:
   - tables

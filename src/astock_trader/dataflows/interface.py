@@ -49,7 +49,7 @@ VENDOR_METHODS: dict[str, dict[str, str]] = {
     "get_income_statement": {"tushare": "get_income", "mx": "get_income_statement", "akshare": "get_income_statement"},
     # --- News (MX → Tushare → eastmoney → akshare fallback) ---
     "get_news": {"mx": "get_news", "tushare": "get_news", "eastmoney": "get_news", "akshare": "get_news"},
-    "get_global_news": {"mx": "get_global_news", "eastmoney": "get_global_news"},
+    "get_global_news": {"mx": "get_global_news", "eastmoney": "get_global_news", "gdelt": "get_global_news"},
     "get_insider_transactions": {"akshare": "get_insider_transactions"},
     # --- MX-exclusive data ---
     "get_stock_valuation": {"mx": "get_stock_valuation"},
@@ -68,13 +68,17 @@ VENDOR_METHODS: dict[str, dict[str, str]] = {
     # --- Industry chain / peers (MX → akshare fallback) ---
     "get_industry_chain": {"mx": "get_industry_chain", "akshare": "get_industry_chain"},
     "get_industry_peers": {"mx": "get_industry_peers", "akshare": "get_industry_peers"},
+    # --- 实时行情（监控层专用；仅服务运行当天，历史日期直接拒绝）---
+    "get_realtime_quote": {"realtime": "get_realtime_quote"},
 }
 
 # Mapping from vendor label to the module that contains its implementation.
 _VENDOR_MODULES: dict[str, str] = {
     "akshare": "astock_trader.dataflows.akshare_data",
     "eastmoney": "astock_trader.dataflows.eastmoney_news",
+    "gdelt": "astock_trader.dataflows.gdelt_data",
     "mx": "astock_trader.dataflows.mx_data",
+    "realtime": "astock_trader.dataflows.realtime_data",
     "tushare": "astock_trader.dataflows.tushare_data",
 }
 

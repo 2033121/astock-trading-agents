@@ -1,8 +1,9 @@
 """Typer CLI — ``astock-trader`` command-line interface.
 
-Provides four top-level commands:
+Provides five top-level commands:
 
 * ``analyze``  — run the multi-agent analysis pipeline
+* ``watch``    — 常驻监控实时行情，命中规则推送通知
 * ``history``  — view past analysis records
 * ``memory``   — manage the decision memory log
 * ``config``   — inspect and modify runtime configuration
@@ -11,6 +12,7 @@ Invocation::
 
     astock-trader analyze 000001
     astock-trader analyze 600519 --date 2025-06-01 --provider deepseek
+    astock-trader watch 600519 000001 --interval 30
     astock-trader history 000001 --limit 5
     astock-trader memory show
     astock-trader config --show
@@ -596,6 +598,136 @@ def config_cmd(
     for key in important_keys:
         table.add_row(key, str(cfg.get(key, "(未设置)")))
 
+    console.print(table)
+
+
+# ────────────────────────────────────────────────────────────────
+#  watch — 监控层
+# ────────────────────────────────────────────────────────────────
+
+_MONITOR_CONFIG_PATH = os.path.join(_DEFAULT_CONFIG_DIR, "monitor.json")
+
+
+def _load_monitor_config(path: str | None = None) -> dict[str, Any]:
+    """读取监控配置（规则 + 通知通道）；文件不存在时返回空 dict。"""
+    target = path or _MONITOR_CONFIG_PATH
+    if not os.path.exists(target):
+        return {}
+    try:
+        with open(target, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        console.print(f"[red]监控配置读取失败：{exc}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def watch(
+    symbols: list[str] = typer.Argument(
+        None, help="监控标的代码，如 600519 000001；也可写在 monitor.json 的 symbols 里"
+    ),
+    interval: int = typer.Option(30, "--interval", "-i", help="轮询间隔（秒）"),
+    config_path: str | None = typer.Option(
+        None, "--config", help="监控配置文件路径（默认 ~/.astock_trader/monitor.json）"
+    ),
+    cooldown: float | None = typer.Option(None, "--cooldown", help="同一标的同一规则的静默窗口（秒），默认 1800"),
+    once: bool = typer.Option(False, "--once", help="只跑一轮，用于核对规则是否写对"),
+    max_ticks: int | None = typer.Option(None, "--max-ticks", help="最多跑多少轮后退出"),
+    all_hours: bool = typer.Option(False, "--all-hours", help="非交易时段也照常轮询（默认跳过）"),
+    test_notify: bool = typer.Option(False, "--test-notify", help="只发一条测试消息，验证通知通道"),
+) -> None:
+    """常驻盯盘：轮询实时行情，命中规则就推送。
+
+    \b
+    示例:
+        astock-trader watch 600519 000001 --once
+        astock-trader watch 600519 --interval 15 --config ~/my_monitor.json
+        astock-trader watch --test-notify
+
+    监控配置（~/.astock_trader/monitor.json）同时放规则与通知通道：
+
+    \b
+        {
+          "symbols": ["600519", "000001"],
+          "interval": 30,
+          "rules": [{"name": "涨超5%", "type": "change_pct",
+                     "direction": "up", "threshold": 5, "level": "notice"}],
+          "notify": {"min_level": "notice", "channels": [
+            {"type": "wecom", "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."}
+          ]}
+        }
+    """
+    from astock_trader.monitor import WatchEngine, build_notifier, load_rules
+    from astock_trader.monitor.store import EventStore
+
+    cfg = _load_monitor_config(config_path)
+
+    notifier = build_notifier(cfg.get("notify"))
+    if test_notify:
+        sent = notifier.test()
+        console.print(f"[green]测试消息已发送到 {sent} 个通道。[/green]" if sent else "[red]没有通道发送成功。[/red]")
+        return
+
+    targets = list(symbols) if symbols else list(cfg.get("symbols") or [])
+    if not targets:
+        console.print("[red]没有监控标的。用 `astock-trader watch 600519` 或在 monitor.json 里配 symbols。[/red]")
+        raise typer.Exit(1)
+
+    try:
+        ruleset = load_rules({"rules": cfg.get("rules"), "per_symbol": cfg.get("per_symbol")})
+    except ValueError as exc:
+        console.print(f"[red]规则配置有误：{exc}[/red]")
+        raise typer.Exit(1)
+
+    engine = WatchEngine(
+        targets,
+        ruleset=ruleset,
+        notifier=notifier,
+        store=EventStore(cfg.get("store_dir") or os.path.join(_DEFAULT_CONFIG_DIR, "monitor")),
+        interval=interval if interval is not None else int(cfg.get("interval", 30)),
+        cooldown_s=cooldown if cooldown is not None else float(cfg.get("cooldown_s", 1800)),
+        only_market_hours=not all_hours and bool(cfg.get("only_market_hours", True)),
+    )
+
+    console.print(
+        Panel(
+            f"标的：{', '.join(engine.symbols)}\n"
+            f"规则：{len(ruleset)} 条\n"
+            f"间隔：{engine.interval}s　冷却：{engine.cooldown_s:.0f}s\n"
+            f"交易时段过滤：{'关' if not engine.only_market_hours else '开'}\n"
+            f"台账：{engine.store.ledger_path}",
+            title="监控已启动",
+            border_style="green",
+        )
+    )
+
+    try:
+        events = engine.run(once=once, max_ticks=max_ticks)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]已停止监控。[/yellow]")
+        return
+
+    if not events:
+        console.print("[dim]本轮没有规则命中。[/dim]")
+        return
+
+    table = Table(title=f"本轮命中 {len(events)} 条", show_lines=True)
+    table.add_column("时间", style="dim")
+    table.add_column("代码", style="cyan")
+    table.add_column("名称")
+    table.add_column("规则", style="bold")
+    table.add_column("级别")
+    table.add_column("说明")
+    for event in events:
+        level_style = {"critical": "red", "warning": "yellow", "notice": "green"}.get(event.level, "white")
+        table.add_row(
+            event.from_dict_ts(),
+            event.symbol,
+            event.name,
+            event.rule,
+            f"[{level_style}]{event.level}[/{level_style}]",
+            event.message,
+        )
     console.print(table)
 
 

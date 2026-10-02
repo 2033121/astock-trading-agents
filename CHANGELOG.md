@@ -26,6 +26,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **监控层：常驻盯盘 + 规则告警 + 多通道推送** (`monitor/` + `dataflows/realtime_data.py` + `astock-trader watch`)：项目此前完全没有告警能力，"实时"只是 JSONL 进度文件 + 2 秒 meta-refresh 的静态 HTML。现在补上不依赖 LLM、可长时间常驻的一层
+  - **实时行情源** (`dataflows/realtime_data.py`)：腾讯 `qt.gtimg.cn` 主源 + 新浪 `hq.sinajs.cn` 兜底，**均免 Key**；解析现价/涨跌幅/换手率/**量比**/振幅/PB/总市值/涨停跌停价。**历史日期硬拒绝** —— 调用方给的 `curr_date` 不等于运行当天即抛 `VendorError`。实时快照无法证明分析日当时可知，喂进 `--date` 回测就是前视偏差，所以这一层直接不给机会。已注册进 `VENDOR_METHODS["get_realtime_quote"]`
+  - **规则 DSL** (`monitor/rules.py`)：`change_pct` / `price` / `limit_move` / `near_limit` / `turnover` / `amount` / `volume_ratio` / `amplitude` 八类，声明式配置、支持按标的覆盖；求值器是纯函数（只读行情 dict），可脱离网络单测。没有引入 `durable_rules` 之类的重量级规则引擎——为六个操作符背上 Rete/状态机不划算
+  - **轮询引擎** (`monitor/engine.py`)：交易时段门控（周一至周五 9:30-11:30 / 13:00-15:00）、`(标的, 规则)` 冷却去重、取数失败跳过本轮而不退出进程、`on_event` 钩子留给上层触发深度分析。**落盘先于推送**：事件先写 JSONL 台账再发通知，通知超时不会丢告警（这一条来自对 PanWatch 的调研）
+  - **通知分发** (`monitor/notify.py`)：console / 通用 webhook / 企业微信 / 钉钉 / 飞书 / Server酱 / PushPlus / Bark，全部走已有的 `requests`，**零新增依赖**；单通道失败只记 warning，不影响其它通道与监控循环
+  - **台账** (`monitor/store.py`)：追加式 JSONL + 冷却状态原子落盘（重启不重复喊同一异动）
+  - **CLI** `astock-trader watch`：`--once` 核对规则、`--interval` 调间隔、`--cooldown` 调静默窗口、`--all-hours` 关时段门控、`--test-notify` 验通道；配置集中在 `~/.astock_trader/monitor.json`
+  - 新增 `tests/test_monitor.py` + `tests/test_realtime_data.py` 共 81 项（规则边界、冷却与重启去重、通道失败隔离、交易时段边界、取数/回调失败下的引擎行为、历史日期门控）
+- **GDELT 全球新闻源** (`dataflows/gdelt_data.py`)：免 Key 直连 GDELT 2.0 DOC API，补上"全球事件面"（地缘/灾害/政策/供应链）的空白，作为 `get_global_news` 第三顺位（mx → eastmoney → gdelt）接入路由表。**查询区间上界钉死在分析日 23:59:59**（时点门控）；因 GDELT 对出口 IP 限流"每 5 秒一次"，加客户端节流避免并发自伤。已知限制：DOC API 只索引最近约 3 个月，更早的历史抛 `NoMarketDataError` 换源。新增 `tests/test_gdelt_data.py` 20 项（全 mock，不打外网）
+- **`docs/监控层与数据源扩展.md`**：参考产品（TradingVane）的实时链路与数据源拆解、GitHub 生态选型调研（含 PanWatch 架构对照与**许可证风险登记表**：明确不复制 GPL 的 freqtrade/TrendRadar/gdeltPyR，不使用无许可证的 Ashare/Sequoia-X/pytdx）、监控层落地说明与未做清单
 - **时间点门控模块** (`point_in_time.py`)：`normalize_date` / `within_as_of` / `in_window` / `window_reaches_present` / `to_local` / `report_is_known` / `statutory_disclosure_deadline` / `run_as_of` + `CST` 常量。保守方向统一为「证明不了它在分析日之前可知，就不放行」；`CST` 用固定 UTC+8 而非 `zoneinfo`（Windows 缺 IANA 数据库时 `ZoneInfo("Asia/Shanghai")` 会直接抛异常）
 - **`docs/前视偏差防护.md`**：五道门的判据、数据源错误层级与换源契约、新增数据源检查清单（含财报类「报告期结束 ≠ 可知」一问）、**已知缺口**与上游提交对照表
 - 新增 8 个专项测试文件 `tests/test_point_in_time.py`、`test_memory_pointintime.py`、`test_market_memory_pointintime.py`、`test_reflection_holding_window.py`、`test_news_lookahead.py`、`test_fundamentals_pointintime.py`、`test_dataflows_vendor_errors.py`、`test_agent_prompt_grounding.py`，并为评级严格性追加用例；全套 **534 项通过**（原 327 项），`ruff check` + `ruff format --check` 双绿
