@@ -585,7 +585,7 @@ v0.3 基于 [webnovel-studio](https://github.com/2033121/webnovel-studio) v0.2 �
 ```
 
 Claude Code / zCode / DSH 用**软链技能目录**；Codex CLI 用**复制成 slash 命令**
-（`~/.codex/prompts/astock-<slug>.md`）。细节见 [integrations/README.md](integrations/README.md)。
+（`~/.codex/prompts/astock-<slug>.md`）。细节见 [integrations/README.md](https://github.com/2033121/astock-trading-agents/blob/master/integrations/README.md)。
 
 ## 测试
 

@@ -11,12 +11,31 @@ MCP server 的 ``analyze_stock`` 就靠这个约定取结构化结果。此前 `
 工具名单与快照类工具，从没端到端跑过它。
 """
 
+import importlib.util
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from astock_trader.cli.main import app
+
+_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_server_module():
+    """按**文件路径**加载 ``mcp_server.py``，不要用 ``import mcp_server``。
+
+    仓库根不在 ``sys.path`` 上（pyproject 只声明了 ``pythonpath = ["src"]``）。
+    本地跑 ``python -m pytest`` 时 CWD 恰好进了 ``sys.path`` 所以能 import，
+    CI 跑 ``pytest`` 就 ``ModuleNotFoundError`` —— 本地过、CI 挂的经典陷阱。
+    """
+    spec = importlib.util.spec_from_file_location("astock_mcp_server", _ROOT / "mcp_server.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
 
 _MINIMAL_STATE = {
     "company_of_interest": "000155",
@@ -109,9 +128,9 @@ class TestExistingBehaviourKept:
 
 
 class TestMcpParsesWhatTheCliWrites:
-    def test_mcp_side_reads_rating_from_underscore_key(self):
+    def test_mcp_side_reads_rating_from_underscore_key(self, monkeypatch):
         """MCP ``analyze_stock`` 取的键必须是 CLI 真正写出来的那个。"""
-        import mcp_server
+        mcp_server = _load_server_module()
 
         captured = {}
 
@@ -128,14 +147,8 @@ class TestMcpParsesWhatTheCliWrites:
             captured["kwargs"] = kwargs
             return _Proc()
 
-        import subprocess
-
-        original = subprocess.run
-        subprocess.run = _fake_run
-        try:
-            out = mcp_server.analyze_stock("000155", date="2026-10-03")
-        finally:
-            subprocess.run = original
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        out = mcp_server.analyze_stock("000155", date="2026-10-03")
 
         assert out["rating"] == "增持"
         assert out["elapsed_seconds"] == 12.5
@@ -143,19 +156,13 @@ class TestMcpParsesWhatTheCliWrites:
         assert captured["cmd"][-2:] == ["--output", "-"]
         assert "text" not in captured["kwargs"]
 
-    def test_mcp_decodes_utf8_bytes(self):
-        import mcp_server
+    def test_mcp_decodes_utf8_bytes(self, monkeypatch):
+        mcp_server = _load_server_module()
 
         class _Proc:
             returncode = 0
             stdout = json.dumps({"_rating": "买入"}, ensure_ascii=False).encode("utf-8")
             stderr = b""
 
-        import subprocess
-
-        original = subprocess.run
-        subprocess.run = lambda *a, **k: _Proc()
-        try:
-            assert mcp_server.analyze_stock("600519")["rating"] == "买入"
-        finally:
-            subprocess.run = original
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+        assert mcp_server.analyze_stock("600519")["rating"] == "买入"

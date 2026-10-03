@@ -8,7 +8,7 @@
 | **Skills** | Claude Code / Codex / zCode / DSH / QoderWork / Trae | 把上述命令包成可触发的「技能」，带触发词与输出规范 | `./integrations/install.sh` |
 | **MCP** | 任何 MCP 宿主（Claude Desktop / Cline / Continue / Zed…） | 5 个结构化工具，含一次完整分析 | 仅标准库，无需装包 |
 
-选哪个：**只想让 agent 会分析** → CLI + Skills；**想让 agent 把分析结果当结构化数据用** → MCP；**两者都要** → 都装，它们共享同一份数据闭环（见 [附录 A](#附录-a数据闭环与文件落点)）。
+选哪个：**只想让 agent 会分析** → CLI + Skills；**想让 agent 把分析结果当结构化数据用** → MCP；**两者都要** → 都装，它们共享同一份数据闭环（见文末「附录 A」）。
 
 ---
 
@@ -148,7 +148,7 @@ astock-trader analyze 000155 --quiet --output -
 claude mcp add astock-trading-agents -- python /绝对路径/mcp_server.py
 ```
 
-或手写配置（见 [第 7 节](#7-任意-mcp-宿主)）。
+或手写配置（见下文「7. 任意 MCP 宿主」）。
 
 ### 2.4 典型对话
 
