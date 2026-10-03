@@ -15,6 +15,12 @@ import pandas as pd
 
 from astock_trader.point_in_time import in_window, window_reaches_present
 
+from .symbols import to_bare_code
+
+# 大宗交易默认回看窗口（自然日）。东财「每日明细」接口没有按个股查询的形式，
+# 只能按区间拉全市场再筛，窗口开太大等于白拉几千行。
+_BLOCK_TRADE_LOOKBACK_DAYS = 90
+
 try:
     import akshare as ak
 except ImportError:  # pragma: no cover
@@ -225,49 +231,84 @@ def get_global_news(
 
 def get_insider_transactions(
     symbol: Annotated[str, "A-share stock symbol, e.g. '000001'"],
+    curr_date: Annotated[str | None, "Reference date 'YYYY-MM-DD'; None = live run"] = None,
 ) -> str:
     """Get recent block trades (大宗交易) as a proxy for insider activity.
 
-    Uses ``ak.stock_dzjy_mingxi(symbol)`` for detailed block-trade records.
-    Returns a formatted Markdown table.
+    走东方财富「大宗交易-每日明细」（``ak.stock_dzjy_mrmx``）。该接口**没有按个股
+    查询的形式** —— 只能按区间取全市场再按代码过滤，所以这里先拉窗口再筛。
+
+    历史运行（``curr_date`` 非空）下只保留**分析日及之前**已发生的成交：大宗交易
+    是逐日公布的，分析日之后的成交当时不可知，放进来就是前视偏差。
+
+    .. note::
+       此前这里调用的是 ``ak.stock_dzjy_mingxi`` / ``ak.stock_dzjy_detail`` ——
+       **这两个函数在 akshare 里根本不存在**，所以这个工具从写下起就没成功过，
+       情绪分析师长期拿不到大宗数据，只在报告里写一句「数据源异常」。
     """
-    df, err = _safe_call(ak.stock_dzjy_mingxi, symbol=symbol)
+    try:
+        end_dt = pd.Timestamp(str(curr_date).strip()) if curr_date else pd.Timestamp.today().normalize()
+    except (TypeError, ValueError):
+        return f"get_insider_transactions({symbol}): invalid curr_date {curr_date!r}"
+
+    start_dt = end_dt - pd.Timedelta(days=_BLOCK_TRADE_LOOKBACK_DAYS)
+    start_str, end_str = start_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d")
+
+    df, err = _safe_call(ak.stock_dzjy_mrmx, symbol="A股", start_date=start_str, end_date=end_str)
     if err:
-        # Fallback: try the stock_dzjy_detail function
-        df, err2 = _safe_call(ak.stock_dzjy_detail, symbol=symbol)
-        if err2:
-            return f"get_insider_transactions({symbol}): {err}; fallback: {err2}"
-
+        return f"get_insider_transactions({symbol}): {err}"
     if df is None or df.empty:
-        return f"get_insider_transactions({symbol}): No block trade (大宗交易) data found."
+        return f"get_insider_transactions({symbol}): 全市场在 {start_str}~{end_str} 区间内无大宗交易记录。"
 
-    # Normalise common column names
-    col_map = {
-        "交易日期": "date",
-        "成交价": "price",
-        "成交金额": "amount",
-        "成交量": "volume",
-        "买方营业部": "buyer",
-        "卖方营业部": "seller",
-        "溢价率": "premium_rate",
-        "折价率": "discount_rate",
-        "收盘价": "close_price",
-    }
-    df = df.rename(columns=col_map)
+    df = df.rename(
+        columns={
+            "交易日期": "date",
+            "成交价": "price",
+            "成交额": "amount",
+            "成交量": "volume",
+            "折溢率": "premium_rate",
+            "收盘价": "close_price",
+            "买方营业部": "buyer",
+            "卖方营业部": "seller",
+        }
+    )
 
-    # Keep useful columns
-    preferred = ["date", "price", "close_price", "premium_rate", "discount_rate", "volume", "amount", "buyer", "seller"]
-    keep = [c for c in preferred if c in df.columns]
-    if keep:
-        df = df[keep]
+    # 全市场 → 本标的。接口返回的代码是 6 位字符串，但补零更稳。
+    code_col = "证券代码"
+    if code_col in df.columns:
+        df = df[df[code_col].astype(str).str.zfill(6) == to_bare_code(symbol)]
 
-    # Format numeric columns
-    for c in ["price", "close_price", "volume", "amount"]:
+    if df.empty:
+        return (
+            f"get_insider_transactions({symbol}): 该标的在 {start_str}~{end_str} 区间内无大宗交易记录"
+            f"（全市场同期有成交，只是这只票没有）。"
+        )
+
+    # 时点门控：分析日之后的成交当时不可知
+    if curr_date is not None and "date" in df.columns:
+        dates = pd.to_datetime(df["date"], errors="coerce")
+        df = df[dates <= end_dt]
+
+    if df.empty:
+        return f"get_insider_transactions({symbol}): 该标的在 {start_str}~{end_str} 区间内无大宗交易记录。"
+
+    keep = [
+        c
+        for c in ("date", "price", "close_price", "premium_rate", "volume", "amount", "buyer", "seller")
+        if c in df.columns
+    ]
+    df = df[keep].copy()
+    if "date" in df.columns:
+        df = df.sort_values("date", ascending=False)
+
+    for c in ("price", "close_price", "volume", "amount"):
         if c in df.columns:
             df[c] = df[c].apply(lambda x: _fmt_number(x, 2))
-    for c in ["premium_rate", "discount_rate"]:
-        if c in df.columns:
-            df[c] = df[c].apply(lambda x: f"{float(x):.2f}%" if pd.notna(x) else "N/A")
+    if "premium_rate" in df.columns:
+        df["premium_rate"] = df["premium_rate"].apply(lambda x: f"{float(x):.2f}%" if pd.notna(x) else "N/A")
 
-    header = f"## Block Trades (大宗交易) — {symbol}\n\n"
+    header = (
+        f"## Block Trades (大宗交易) — {symbol}\n\n"
+        f"> 区间 {start_str}~{end_str} · 成交量单位「万股」· 成交额单位「万元」· 折溢率为负表示折价成交\n\n"
+    )
     return header + _df_to_markdown(df, max_rows=30)

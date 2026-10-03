@@ -27,6 +27,7 @@ from datetime import datetime
 import requests
 
 from .errors import NoMarketDataError, VendorError, VendorNotConfiguredError
+from .symbols import to_prefixed_code as _to_prefixed_code
 
 logger = logging.getLogger(__name__)
 
@@ -76,24 +77,9 @@ def to_prefixed_code(symbol: str) -> str:
     """把 6 位 A 股代码转成带交易所前缀的行情代码。
 
     ``600519 -> sh600519``、``000001 -> sz000001``、``430047 -> bj430047``。
-    已带前缀的原样返回（统一小写）。
+    已带前缀的原样返回（统一小写）。实现集中在 :mod:`astock_trader.dataflows.symbols`。
     """
-    raw = str(symbol).strip().lower()
-    if raw.startswith(("sh", "sz", "bj")) and len(raw) == 8:
-        return raw
-    # 兼容 Tushare 的 600519.SH 写法
-    code = raw.split(".")[0]
-    exchange = raw.split(".")[1] if "." in raw else ""
-    if exchange in {"sh", "sz", "bj"}:
-        return f"{exchange}{code}"
-    code = code.zfill(6)
-    if code.startswith(("60", "68", "5", "11")):
-        prefix = "sh"
-    elif code.startswith(("43", "83", "87", "92")):
-        prefix = "bj"
-    else:
-        prefix = "sz"
-    return f"{prefix}{code}"
+    return _to_prefixed_code(symbol)
 
 
 def _today_str() -> str:

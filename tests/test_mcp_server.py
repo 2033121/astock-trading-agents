@@ -169,6 +169,9 @@ def test_stdio_end_to_end(mcp):
         input="\n".join(json.dumps(r) for r in reqs) + "\n",
         capture_output=True,
         text=True,
+        # MCP stdio 是 UTF-8；不写死 encoding 的话父进程会按系统区域设置解码
+        # （Windows 上是 GBK），中文内容直接乱码，且测试结果随机器而变。
+        encoding="utf-8",
         timeout=30,
     )
     assert proc.returncode == 0
@@ -177,13 +180,41 @@ def test_stdio_end_to_end(mcp):
     assert responses[1]["result"]["tools"]
 
 
+def test_stdio_output_is_utf8_bytes():
+    """stdout 必须是 UTF-8 字节 —— MCP 协议如此，且工具描述里全是中文。
+
+    不钉死编码时 Windows 会按 GBK 输出，客户端按协议解 UTF-8 就是乱码；
+    这里直接看**原始字节**，避免父进程用自己的区域设置把问题掩盖过去。
+    """
+    reqs = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    ]
+    proc = subprocess.run(
+        [sys.executable, str(_ROOT / "mcp_server.py")],
+        input=("\n".join(json.dumps(r) for r in reqs) + "\n").encode("utf-8"),
+        capture_output=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0
+
+    text = proc.stdout.decode("utf-8")  # 解不出来就说明不是 UTF-8
+    assert "股票代码" in text  # 中文以 UTF-8 落盘，而不是 GBK
+
+
 # ── review_backtest tool ──────────────────────────────────────────
 
 
 class _FakeProc:
-    def __init__(self, stdout: str, returncode: int = 0):
-        self.stdout = stdout
-        self.stderr = ""
+    """模拟 ``subprocess.run`` **不带 text=True** 时的返回：stdout/stderr 是**字节**。
+
+    调用方固定按 UTF-8 解码（Windows 上父进程默认 GBK，中文会整段乱码），所以假
+    对象也必须给字节 —— 给了 str 就测不出真实契约。
+    """
+
+    def __init__(self, stdout: str, returncode: int = 0, stderr: str = ""):
+        self.stdout = stdout.encode("utf-8")
+        self.stderr = stderr.encode("utf-8")
         self.returncode = returncode
 
 
@@ -220,9 +251,7 @@ def test_review_backtest_nonzero_exit(monkeypatch, mcp):
     mod, _ = mcp
 
     def boom(*a, **k):
-        p = _FakeProc("", returncode=1)
-        p.stderr = "Traceback"
-        return p
+        return _FakeProc("", returncode=1, stderr="Traceback")
 
     monkeypatch.setattr(mod.subprocess, "run", boom)
     out = mod.review_backtest()

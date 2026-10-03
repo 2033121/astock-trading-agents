@@ -35,8 +35,12 @@ DSH 与 Claude Code 则通过上面的软链获得技能加载。
 ## 智能体进度侧边栏面板 (v0.5 面板增强)
 
 运行 `astock-trader analyze` 时默认在 results 目录生成
-`<symbol>_<date>_progress.jsonl`（可 `progress_file` / `ASTOCK_PROGRESS_FILE` 覆盖），
+`<symbol>_<date>_progress.jsonl`（用配置键 `progress_file` 覆盖路径），
 记录 12 个智能体的 运行中/完成/失败 事件（主持人匹配各智能体的中文标牌）。
+
+> 此前这里写「可 `ASTOCK_PROGRESS_FILE` 覆盖」—— **代码里没有读这个环境变量**，
+> 唯一生效的是配置键 `progress_file`（`astock-trader config --set progress_file --value <路径>`）。
+> 已更正。
 
 任何宿主实时观察：
 

@@ -25,6 +25,8 @@
 - **向量记忆**: 纯 Python TF-IDF bigram 语义检索，分析前注入历史上下文，分析后自动索引持久化
 - **反思闭环**: 跟踪历史预测 → akshare 获取实际收益 → LLM 生成反思教训 → 写回记忆提升未来决策；持有窗口按**交易日**判定（长假不会把 1 日收益标成 5 日）
 - **前视偏差防护**: `--date <历史日期>` 运行时，记忆检索、向量检索、新闻窗口与反思结算全部按时间点门控——分析日之后才可知的信息不会进入 prompt。判据见 [`docs/前视偏差防护.md`](docs/前视偏差防护.md)
+- **常驻监控与告警**: `astock-trader watch` 轮询实时行情（腾讯主源 + 新浪兜底，免 Key），声明式规则引擎（8 类规则）触发事件后落台账再推送（企业微信/钉钉/飞书/Server酱/PushPlus/Bark/webhook/console），**落盘先于推送**故通知超时不会丢告警。设计见 [`docs/监控层与数据源扩展.md`](docs/监控层与数据源扩展.md)
+- **Agent 原生接入**: CLI / Skills / MCP 三条接入面共享同一份数据闭环，覆盖 Claude Code、Codex CLI、Cursor、Windsurf、Cline、Trae、zCode、Qoder 及任意 MCP 宿主。见 [`docs/Agent接入指南.md`](docs/Agent接入指南.md)
 - **辩论公平性保证** (v0.5): 多空辩论含最终反驳轮（双方各发言一次后再裁决），路由/接线护栏测试防止回归
 
 ![报告预览](docs/images/demo-report-preview.png)
@@ -166,16 +168,43 @@ export OPENAI_BASE_URL=https://api.deepseek.com
 | 东方财富妙想 | 新闻资讯、实时行情 | `MX_APIKEY` | [妙想平台](https://mkapi2.dfcfs.com) |
 | akshare | 行情数据、技术指标 | 无需 | 开源库，自动可用 |
 
-系统内置了三级 fallback 机制：当首选数据源不可用时，自动切换到备选源。
-
-#### 3. 报告输出目录（可选）
+Tushare 的 token 也可以写进用户级配置，省得每次开终端都设环境变量
+（该文件在仓库之外，不要提交）：
 
 ```bash
-# 设置 HTML 报告保存目录
-export ASTOCK_REPORT_DIR=/path/to/your/reports
+astock-trader config --set tushare_token --value <你的 token>
 ```
 
-未设置时，HTML 报告功能将自动禁用。
+行情数据（日线 OHLCV）内置**三源 fallback**：东方财富 → 新浪 → 腾讯。
+东方财富按出口 IP 做服务端限流，被拦时表现为连接被重置（UA / Referer /
+TLS 指纹都无效，见 akshare issue #6100、#7098），此时自动切到新浪或腾讯，
+报告里的 `source:` 一行会写明实际出数的源。三家的前复权基准略有差异，
+所以同一条序列始终由同一个源提供，不做跨源拼接。
+
+#### 3. 输出目录
+
+所有运行时产物都落在**一个项目根**下，无需逐个配置：
+
+| 平台 | 默认根目录 |
+|------|-----------|
+| Windows（存在 D 盘） | `D:\astock_trader` |
+| 其他 | `~/.astock_trader` |
+
+用 `ASTOCK_HOME` 可以整体搬到别处：
+
+```bash
+export ASTOCK_HOME=/path/to/astock_home
+```
+
+根目录下会生成：`reports/`（HTML 报告）、`logs/`（状态与结果 JSON）、
+`memory/`、`vector_memory/`、`checkpoints/`、`monitor/`、
+`external_calibration/`，以及 `user_config.json`。
+
+HTML 报告**默认就会生成**到 `<项目根>/reports/`。要把报告单独放到别处时：
+
+```bash
+export ASTOCK_REPORT_DIR=/path/to/your/reports
+```
 
 ### 运行分析
 
@@ -404,15 +433,18 @@ python3 scripts/agent_panel.py <results_dir>/600519_20260911_progress.jsonl
 ## MCP Server
 
 仓库根目录提供**零依赖**的 MCP stdio 服务器（`mcp_server.py`），可在任意 MCP 主机
-（Claude Desktop 等）中把本框架作为工具集调用：
+（Claude Desktop / Claude Code / Cline / Continue / Zed…）中把本框架作为工具集调用。
+只用标准库，**不需要 `pip install` 本项目即可启动**：
 
-| 工具 | 说明 |
-|------|------|
-| `analyze_stock` | 对一只A股运行完整 15-agent 管线，返回最终评级与摘要 |
-| `list_snapshots` | 列出最近分析快照（含 T+1/T+5/T+10/T+20 追踪收益） |
-| `get_snapshot` | 一只股票的最新快照 + 历史评级时间线 + 累计价格变化 |
-| `read_recent_memories` | 读取最近的交易决策记忆（反思闭环结论） |
-| `review_backtest` | 回测复盘：评级-实际行情对照、T+1/5/10/20 追踪与准确率统计 |
+| 工具 | 必填 | 说明 |
+|------|------|------|
+| `analyze_stock` | `symbol` | 对一只A股运行完整 15-agent 管线，返回最终评级与摘要（耗时约 2-8 分钟，**消耗真实 token**） |
+| `list_snapshots` | — | 列出最近分析快照（含 T+1/T+5/T+10/T+20 追踪收益） |
+| `get_snapshot` | `stock_code` | 一只股票的最新快照 + 历史评级时间线 + 累计价格变化 |
+| `read_recent_memories` | — | 读取最近的交易决策记忆（反思闭环结论） |
+| `review_backtest` | — | 回测复盘：评级-实际行情对照、T+1/5/10/20 追踪与准确率统计 |
+
+后四个是纯文件读取，毫秒级、零 token，可以放心让 agent 频繁调用。
 
 客户端配置示例（JSON）：
 
@@ -421,14 +453,26 @@ python3 scripts/agent_panel.py <results_dir>/600519_20260911_progress.jsonl
   "mcpServers": {
     "astock-trading-agents": {
       "command": "python",
-      "args": ["D:/Qoder/astock-trading-agents/mcp_server.py"]
+      "args": ["/绝对路径/astock-trading-agents/mcp_server.py"]
     }
   }
 }
 ```
 
+Claude Code 用户也可以一条命令注册：
+
+```bash
+claude mcp add astock-trading-agents -- python /绝对路径/astock-trading-agents/mcp_server.py
+```
+
 环境变量：`ASTOCK_SNAPSHOT_LOG_PATH`（快照日志路径，默认 scripts/save_snapshot.py 内置路径）、
 `ASTOCK_MEMORY_LOG_PATH`（决策记忆 markdown）、`ASTOCK_MCP_CLI_TIMEOUT`（analyze 工具超时秒数，默认 1200）。
+
+`analyze_stock` 内部用 `astock-trader analyze --quiet --output -` 取结构化结果，
+stdout 上就是一份 UTF-8 的 JSON —— 想在自己的脚本里复用同样的输出，照这个调用即可。
+
+> 各宿主（Claude Code / Codex / Trae / Qoder / Cline…）的完整接入步骤见
+> **[Agent 接入指南](docs/Agent接入指南.md)**。
 
 ## QoderWork 集成
 
@@ -444,7 +488,7 @@ python3 scripts/agent_panel.py <results_dir>/600519_20260911_progress.jsonl
 每天 15:30 分析自选股列表并生成报告
 ```
 
-插件包含 5 个 Skill：
+插件包含 7 个 Skill：
 
 | Skill | 说明 |
 |-------|------|
@@ -452,7 +496,7 @@ python3 scripts/agent_panel.py <results_dir>/600519_20260911_progress.jsonl
 | 分析历史 | 查看历史分析记录和决策结果 |
 | 决策记忆 | 管理决策记忆日志，支持结算和反思 |
 | 交易配置 | 查看和修改 LLM 模型、数据源等配置参数 |
-| 复盘深度分析 | 回测数据深度分析，生成 per-agent 校准反馈 (v0.4) |
+| 快照跟踪对比 | 多期快照对比，呈现评级/价格演变与方向一致性 (v0.5) |
 | 龙虎榜解读 | 龙虎榜席位归因 → 资金信号摘要，可注入 news/sentiment 分析师 (v0.5) |
 | 行业对比解读 | 相对估值横截面：行业中位 PE/PB、分位数定位、多业务板块对标 (v0.5) |
 
@@ -485,7 +529,7 @@ v0.4 实现了完整的**反馈注入回路**——从回测跟踪到质量校�
 | 追踪间隔修复 | `scripts/review_backtest.py` | T+N 改为交易日计数，修复周末/节假日导致的间隔偏差 |
 | 快照置信度 | `scripts/save_snapshot.py` | 新增 `confidence` 数值字段（0.0–1.0），供反馈加权使用 |
 | 记忆轮转 | `graph/trading_graph.py` | 自动调用 `_apply_rotation()`，防止记忆文件无限增长 |
-| 复盘深度分析 Skill | `skills/复盘深度分析/` | Expert Suite Plugin，LLM 深度分析生成 per-agent 校准建议 |
+| 复盘深度分析 Skill | ~~`skills/复盘深度分析/`~~ | Expert Suite Plugin，LLM 深度分析生成 per-agent 校准建议（**该目录后续已移除，当前仓库不含此 Skill**） |
 | Cron 集成 | QoderWork | 每周五 17:00 自动运行回测+深度分析，结果推送微信 |
 
 ## v0.3 升级亮点
@@ -506,46 +550,47 @@ v0.3 基于 [webnovel-studio](https://github.com/2033121/webnovel-studio) v0.2 �
 
 所有配置项均可通过 `astock-trader config --set` 或 `default_config.py` 调整。 `astock-trader config --set` 或 `default_config.py` 调整。
 
-## AI 编辑器适配
+## AI Agent 接入
 
-本项目为多种 AI 编程助手提供内置的项目级指令文件，帮助 AI 快速理解代码库结构和开发规范。
+本框架可以被**任何 AI 编程助手 / Agent 宿主**使用。三条接入姿势互相独立、可以叠加：
 
-### Claude Code (`CLAUDE.md`)
+| 姿势 | 面向 | 怎么装 |
+|------|------|--------|
+| **CLI 直用** | 任何能执行 shell 的 agent | `pip install -e .` |
+| **Skills** | Claude Code / Codex / zCode / DSH / QoderWork | `./integrations/install.sh` |
+| **MCP** | 任意 MCP 宿主（Claude Desktop / Cline / Continue / Zed…） | 仅标准库，无需装包 |
 
-项目根目录包含 `CLAUDE.md`，Claude Code 每次会话启动时自动读取。包含：
+**完整步骤见 [docs/Agent接入指南.md](docs/Agent接入指南.md)** —— 含每个宿主的注册方式、
+可触发技能清单、MCP 配置、凭证与目录约定、已知限制。
 
-- 项目结构与模块说明
-- 常用命令速查
-- 编码规范与安全约束
-- 环境变量清单
+### 项目级指令文件（自动加载）
 
-直接使用即可，无需额外配置。
+| 文件 | 宿主 | 说明 |
+|------|------|------|
+| `CLAUDE.md` | Claude Code | 会话启动自动读取：结构、命令、架构约束、环境变量 |
+| `AGENTS.md` | Codex CLI / zCode / Cursor / Windsurf / Cline / Amp… | 凡是认 `AGENTS.md` 约定的宿主都读它 |
+| `.trae/rules/project_rules.md` | Trae IDE | 全局规则 |
+| `.trae/rules/agents_rules.md` | Trae IDE | 仅在 `src/astock_trader/agents/**/*.py` 下生效 |
+| `.trae/rules/graph_rules.md` | Trae IDE | 仅在 `src/astock_trader/graph/**/*.py` 下生效 |
+| `.qoder-plugin/plugin.json` | Qoder / QoderWork | 原生插件描述与技能列表 |
 
-### OpenAI Codex (`AGENTS.md`)
+这些文件都随仓库提供，**开箱即用、无需额外配置**。
 
-项目根目录包含 `AGENTS.md`，Codex CLI 每次启动时自动加载。采用 Codex 推荐的精简格式，包含：
+### Skills（可触发的工作流）
 
-- Commands / Structure / Stack / Style / Tests / Boundaries 六大板块
-- 关键架构约束（空消息修复、报告生成回填机制等）
+```bash
+./integrations/install.sh                       # 自动探测并注册到全部可用宿主
+./integrations/install.sh claude codex          # 只装指定宿主
+./integrations/install.sh codex --dry-run       # 预览，不落盘
+```
 
-直接使用即可，无需额外配置。
-
-### Trae IDE (`.trae/rules/`)
-
-`.trae/rules/` 目录下包含项目规则文件，Trae 在编码时自动注入上下文：
-
-| 文件 | 作用域 | 说明 |
-|------|--------|------|
-| `project_rules.md` | 全局 | 项目概览、架构、开发规范 |
-| `agents_rules.md` | `src/astock_trader/agents/**/*.py` | 智能体模块开发规则 |
-| `graph_rules.md` | `src/astock_trader/graph/**/*.py` | LangGraph 编排层开发规则 |
-
-直接使用即可，Trae 会根据文件路径自动匹配对应规则。
+Claude Code / zCode / DSH 用**软链技能目录**；Codex CLI 用**复制成 slash 命令**
+（`~/.codex/prompts/astock-<slug>.md`）。细节见 [integrations/README.md](integrations/README.md)。
 
 ## 测试
 
 ```bash
-# 运行所有测试（共 241 个）
+# 运行所有测试（共 799 个，15 个按环境跳过）
 pytest tests/
 
 # 详细输出
@@ -562,8 +607,18 @@ pytest tests/test_prompt_prefix.py      # v0.5: 提示词前缀接线护栏
 pytest tests/test_semantic_cache.py     # v0.5: 语义响应缓存
 pytest tests/test_pm_matrix.py          # v0.5: 基金经理决策矩阵
 pytest tests/test_context_digest.py     # v0.5: 研究员报告摘要
-pytest tests/test_mcp_server.py         # v0.5: MCP server（含 stdio 端到端）
+pytest tests/test_mcp_server.py         # v0.5: MCP server（含 stdio 端到端 + UTF-8 字节断言）
 pytest tests/test_backtest_consumer.py   # v0.4: 反馈消费 + 衰减测试
+
+# 回归护栏（这几条守的是「静默失效」类缺陷，改动数据层/工具封装时必跑）
+pytest tests/test_tool_signatures.py        # 工具封装 vs vendor 参数名逐项比对
+pytest tests/test_debate_state_merge.py     # 辩论历史不被嵌套状态覆盖
+pytest tests/test_dataflows_config_wiring.py # 配置真的推到了数据层
+pytest tests/test_ohlcv_fallback.py         # 日线三源 fallback 与单位归一化
+pytest tests/test_rating_action.py          # 评级/操作字段的否定句识别
+pytest tests/test_paths.py                  # 落盘路径解析与派生
+pytest tests/test_report_stages.py          # 报告面板去重与耗时回填
+pytest tests/test_block_trades.py           # 大宗交易时点门控
 
 # 带覆盖率报告
 pytest tests/ --cov=astock_trader --cov-report=term-missing
@@ -584,7 +639,6 @@ astock-trading-agents/
 │   ├── 分析历史/                   # 历史记录查看
 │   ├── 决策记忆/                   # 记忆管理
 │   ├── 交易配置/                   # 配置管理
-│   ├── 复盘深度分析/               # 回测反馈深度分析 (v0.4)
 │   ├── 快照跟踪对比/               # 多期快照跟踪对比
 │   ├── 龙虎榜解读/                 # 龙虎榜席位归因资金信号 (akshare 实测接口)
 │   └── 行业对比解读/               # 相对估值横截面（PE/PB 分位定位）

@@ -42,6 +42,7 @@ VENDOR_METHODS: dict[str, dict[str, str]] = {
     # --- Core price / technical data (akshare) ---
     "get_stock_data": {"akshare": "get_stock_data"},
     "get_indicators": {"akshare": "get_indicators"},
+    "get_technical_indicators": {"akshare": "get_technical_indicators"},
     # --- Financial data (Tushare → MX → akshare fallback) ---
     "get_fundamentals": {"tushare": "get_fundamentals", "mx": "get_fundamentals", "akshare": "get_fundamentals"},
     "get_balance_sheet": {"tushare": "get_balance_sheet", "mx": "get_balance_sheet", "akshare": "get_balance_sheet"},
@@ -50,7 +51,10 @@ VENDOR_METHODS: dict[str, dict[str, str]] = {
     # --- News (MX → Tushare → eastmoney → akshare fallback) ---
     "get_news": {"mx": "get_news", "tushare": "get_news", "eastmoney": "get_news", "akshare": "get_news"},
     "get_global_news": {"mx": "get_global_news", "eastmoney": "get_global_news", "gdelt": "get_global_news"},
-    "get_insider_transactions": {"akshare": "get_insider_transactions"},
+    # 大宗交易。实现住在 eastmoney_news 里（走 akshare 的 stock_dzjy_* 接口），
+    # 此前却把 vendor 标成 "akshare" —— 而 akshare_data 模块根本没有这个函数，
+    # 路由只会返回「module has no function」，情绪分析师因此长期拿不到大宗数据。
+    "get_insider_transactions": {"eastmoney": "get_insider_transactions"},
     # --- MX-exclusive data ---
     "get_stock_valuation": {"mx": "get_stock_valuation"},
     "get_shareholder_info": {"mx": "get_shareholder_info"},

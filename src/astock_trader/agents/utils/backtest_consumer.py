@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from astock_trader.paths import project_dir
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class BacktestFeedbackConsumer:
         if feedback_path:
             self._path = Path(feedback_path)
         else:
-            self._path = Path(os.path.expanduser("~/.astock_trader")) / _DEFAULT_FEEDBACK_FILE
+            self._path = Path(project_dir()) / _DEFAULT_FEEDBACK_FILE
         self._min_verified = min_verified
         self._expiry_days = expiry_days
         # Decay tiers: default warn=expiry_days, ignore=180

@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Any
 
 from astock_trader.agents.utils.memory import TradingMemoryLog
+from astock_trader.agents.utils.rating import extract_action
+from astock_trader.dataflows.config import set_config as set_dataflows_config
 from astock_trader.default_config import DEFAULT_CONFIG
 from astock_trader.graph.checkpointer import (
     get_checkpointer,
@@ -37,6 +39,7 @@ from astock_trader.graph.reflection import Reflector
 from astock_trader.graph.setup import GraphSetup
 from astock_trader.graph.signal_processing import SignalProcessor
 from astock_trader.llm_clients.resilience import ResilientInvoker
+from astock_trader.paths import project_dir, project_path
 from astock_trader.point_in_time import normalize_date
 
 # Backtest feedback consumer (optional import, graceful fallback)
@@ -91,6 +94,13 @@ class TradingAgentsGraph:
         self.selected_analysts = selected_analysts or ["market", "social", "news", "fundamentals"]
         self.debug = debug
         self.callbacks = callbacks or []
+
+        # ── 把配置推给数据层 ──────────────────────────────────
+        # ``dataflows`` 是独立于本模块的全局单例，靠 ``set_config`` 注入。
+        # 此前**没有任何地方调用它**，于是 ``get_config()`` 永远返回空 dict：
+        # ``data_vendor`` 首选源配置形同虚设，凭证也只能靠环境变量碰运气
+        # （user_config.json 里的 tushare token 完全走不到数据源）。
+        set_dataflows_config(self.config)
 
         # ── Create LLM clients (4-tier) ──────────────────────
         self.deep_thinking_llm, self.heavy_thinking_llm, self.standard_thinking_llm, self.quick_thinking_llm = (
@@ -190,10 +200,7 @@ class TradingAgentsGraph:
             quick_thinking_llm=self.quick_thinking_llm,
         )
         self.memory_log = TradingMemoryLog(
-            memory_dir=self.config.get(
-                "project_dir",
-                os.path.expanduser("~/.astock_trader"),
-            ),
+            memory_dir=self.config.get("project_dir") or project_dir(),
         )
 
         # ── Vector memory (optional) ─────────────────────────
@@ -203,7 +210,7 @@ class TradingAgentsGraph:
                 from astock_trader.memory.market_memory import MarketMemory
 
                 mem_dir = self.config.get("vector_memory_dir") or os.path.join(
-                    self.config.get("project_dir", os.path.expanduser("~/.astock_trader")),
+                    self.config.get("project_dir") or project_dir(),
                     "vector_memory",
                 )
                 self.market_memory = MarketMemory(
@@ -476,9 +483,12 @@ class TradingAgentsGraph:
         quick_model = self.config.get("quick_think_llm", "deepseek-chat")
         explicit_url = self.config.get("backend_url")
 
-        # API key resolution: check multiple env vars for compatibility
+        # API key resolution: 配置文件 → 环境变量（多 provider 兼容）。
+        # 配置文件（user_config.json）在仓库之外，省得每次开终端都重设环境变量；
+        # 环境变量仍然优先于「没有任何配置文件」的情形由下面的 provider 专用变量接管。
         api_key = (
-            os.environ.get("OPENAI_API_KEY")
+            str(self.config.get("api_key") or "").strip()
+            or os.environ.get("OPENAI_API_KEY")
             or os.environ.get("DEEPSEEK_API_KEY")
             or os.environ.get("DASHSCOPE_API_KEY")
             or os.environ.get("MIMO_API_KEY")
@@ -593,7 +603,7 @@ class TradingAgentsGraph:
         """Persist the final state as a JSON log file."""
         results_dir = self.config.get(
             "results_dir",
-            os.path.expanduser("~/.astock_trader/logs"),
+            project_path("logs"),
         )
         Path(results_dir).mkdir(parents=True, exist_ok=True)
 
@@ -905,7 +915,13 @@ class TradingAgentsGraph:
 
     @staticmethod
     def _patch_report_elapsed(filepath: str, elapsed: float) -> None:
-        """Patch the HTML report file with the actual elapsed time."""
+        """Patch the HTML report file with the actual elapsed time.
+
+        要回填**两处**：JSON 里的 ``elapsed`` 字段（渲染用），以及摘要正文里
+        写死的那个数字。此前只补了前者，于是正文永远显示「分析耗时：0.0秒」。
+        """
+        from astock_trader.graph.report_generator import ELAPSED_PLACEHOLDER
+
         with open(filepath, encoding="utf-8") as f:
             html = f.read()
         # Replace the placeholder elapsed value (0) in the embedded JSON
@@ -914,18 +930,22 @@ class TradingAgentsGraph:
             f'"elapsed": {round(elapsed, 1)}',
             1,
         )
+        # 摘要正文里的占位符（可能出现两次：抬头 + 流程回溯）
+        html = html.replace(ELAPSED_PLACEHOLDER, f"{elapsed:.1f}")
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(html)
         logger.debug("Patched report elapsed: %.1fs in %s", elapsed, filepath)
 
     @staticmethod
     def _extract_action(state: dict[str, Any]) -> str:
-        """Try to extract the trade action from the trader's plan."""
-        plan = state.get("trader_investment_plan", "")
-        for action in ("买入", "增持", "持有", "减持", "卖出"):
-            if action in plan:
-                return action
-        return "unknown"
+        """Try to extract the trade action from the trader's plan.
+
+        走 :func:`astock_trader.agents.utils.rating.extract_action`：按文中出现
+        顺序扫描并**剔除否定语境的提及**。旧实现是「按刻度表顺序找第一个子串」，
+        于是交易员写的「这不是"买入信号"，而是布局框架」会被读成「买入」——
+        方向正好读反，还会一路写进记忆日志和 history 摘要。
+        """
+        return extract_action(state.get("trader_investment_plan")) or "unknown"
 
     @staticmethod
     def _make_serialisable(obj: Any) -> Any:

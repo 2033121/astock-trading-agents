@@ -17,6 +17,8 @@ from datetime import datetime
 from datetime import time as dtime
 from typing import Any
 
+from astock_trader.paths import project_path
+
 from .events import MonitorEvent
 from .notify import Notifier, build_notifier
 from .rules import RuleSet, evaluate, load_rules
@@ -151,6 +153,4 @@ class WatchEngine:
 
 
 def _default_store_dir() -> str:
-    import os
-
-    return os.path.expanduser("~/.astock_trader/monitor")
+    return project_path("monitor")

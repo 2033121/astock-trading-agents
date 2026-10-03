@@ -26,6 +26,7 @@ from typing import Annotated, Any
 
 import requests
 
+from astock_trader.dataflows.config import get_config
 from astock_trader.dataflows.errors import VendorError, VendorNotConfiguredError, VendorRateLimitError
 from astock_trader.point_in_time import report_is_known, within_as_of
 
@@ -44,13 +45,32 @@ _RATE_LIMIT_HINTS = ("积分", "频次", "每分钟", "每天最多", "超过访
 
 
 def _get_token() -> str:
-    """获取 Tushare API Token。必须通过环境变量 TUSHARE_TOKEN 设置。"""
-    token = os.environ.get("TUSHARE_TOKEN", "").strip()
-    if not token:
-        raise VendorNotConfiguredError(
-            "未找到 Tushare API Token。请设置环境变量 TUSHARE_TOKEN，可在 https://tushare.pro/register 注册获取。"
-        )
-    return token
+    """获取 Tushare API Token。
+
+    解析顺序：用户级配置 ``tushare_token`` → 环境变量 ``TUSHARE_TOKEN``。
+
+    **配置优先于环境变量是刻意的**：环境里常留着一个旧的、早已失效的 token，
+    它会把用户刚写进 ``user_config.json`` 的新 token 静默顶掉。实测就是这样 ——
+    报告一轮轮写「token 失效」，而新 token 其实是好的、只是永远轮不到它。
+    显式写在配置里的是更晚、更具体的意图，让它赢；覆盖发生时记一条日志
+    （不打印任何一个值）。
+
+    凭证纪律：token 只从环境或用户级配置读，**永远不写进仓库**。
+    """
+    configured = str(get_config().get("tushare_token", "") or "").strip()
+    env_token = os.environ.get("TUSHARE_TOKEN", "").strip()
+
+    if configured:
+        if env_token and env_token != configured:
+            logger.info("Tushare token：采用 user_config.json 中的值，已覆盖环境变量 TUSHARE_TOKEN（值不落日志）。")
+        return configured
+    if env_token:
+        return env_token
+
+    raise VendorNotConfiguredError(
+        "未找到 Tushare API Token。请设置环境变量 TUSHARE_TOKEN，"
+        "或写入 user_config.json 的 tushare_token 字段（https://tushare.pro/register 注册获取）。"
+    )
 
 
 def _to_ts_code(symbol: str) -> str:

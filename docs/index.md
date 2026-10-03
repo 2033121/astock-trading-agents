@@ -9,7 +9,11 @@
 | 页面 | 内容 |
 |------|------|
 | [使用说明](使用说明.md) | 安装、CLI、Python API、15 角色架构、MCP server 配置 |
+| [Agent 接入指南](Agent接入指南.md) | 把本框架接进 Claude Code / Codex / Cursor / Windsurf / Cline / Trae / Qoder / 任意 MCP 宿主 |
 | [English](README.en.md) | Condensed English guide + rating glossary |
+| [前视偏差防护](前视偏差防护.md) | 时点门控的判据、数据源换源契约、新增数据源检查清单 |
+| [监控层与数据源扩展](监控层与数据源扩展.md) | 盯盘/告警层设计与数据源广度调研 |
+| [外部校准接入](外部校准接入.md) | 第三方记分板（Headline Arena）只读接入 |
 | [Token 控制改进方案](Token控制改进方案.md) | 调研与降耗策略路线图（现状诊断 / 六大策略） |
 | [改进路线图](改进路线图.md) | P0/P1/P2 全项目改进方向与完成状态 |
 
@@ -21,15 +25,23 @@ export DEEPSEEK_API_KEY=hdsk-...   # 任意 OpenAI 兼容 provider 的 key
 astock-trader analyze 600519 --provider deepseek --date 2025-06-01
 ```
 
-或作为 MCP 工具暴露（Claude Desktop 等）：
+只想要结构化结果（脚本 / Agent 消费）：
+
+```bash
+astock-trader analyze 000155 --quiet --output -   # stdout 上就是一份 JSON
+```
+
+或作为 MCP 工具暴露给任意 MCP 宿主（Claude Desktop / Claude Code / Cline …）：
 
 ```json
 {
   "mcpServers": {
     "astock-trading-agents": {
       "command": "python",
-      "args": ["D:/Qoder/astock-trading-agents/mcp_server.py"]
+      "args": ["/绝对路径/astock-trading-agents/mcp_server.py"]
     }
   }
 }
 ```
+
+各宿主的具体注册方式见 [Agent 接入指南](Agent接入指南.md)。

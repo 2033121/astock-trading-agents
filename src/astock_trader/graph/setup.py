@@ -81,6 +81,33 @@ ANALYST_REPORT_FIELDS: dict[str, str] = {
     "fundamentals": "fundamentals_report",
 }
 
+
+def _merge_debate(prev: dict[str, Any] | None, **updates: Any) -> dict[str, Any]:
+    """把本轮发言合并进已有辩论状态。
+
+    **为什么需要它**：``AgentState`` 里的 ``investment_debate_state`` /
+    ``risk_debate_state`` 是嵌套 TypedDict，子字段上虽然标了
+    ``Annotated[list, _append_str_list]``，但 LangGraph **不会对嵌套结构应用
+    reducer** —— 实测（``StateGraph`` + 两级 TypedDict）子字典被整体当作
+    LastValue 通道，每次写入直接**替换**。
+
+    后果是辩论历史互相覆盖：辩论顺序是 Bull → Bear → Bull(反驳) → 主管，
+    于是轮到研究主管时，它读到的字典里只剩**最后一轮多头**的写入，
+    ``bear_history`` 已经被冲掉。实测中主管因此写下「本次空头未提交论据」，
+    再自己代拟了一段空方立场 —— 一场只有一个辩手的辩论。
+
+    这里改成每个节点写出**合并后的完整字典**，在替换语义下也就等价于追加。
+    """
+    merged: dict[str, Any] = dict(prev or {})
+    for key, value in updates.items():
+        if isinstance(value, list):
+            existing = merged.get(key)
+            merged[key] = [*(existing if isinstance(existing, list) else []), *value]
+        else:
+            merged[key] = value
+    return merged
+
+
 # ────────────────────────────────────────────────────────────────
 #  System prompts
 # ────────────────────────────────────────────────────────────────
@@ -294,8 +321,19 @@ def _create_msg_clear_node(
             last = messages[-1]
             report = getattr(last, "content", "") or ""
 
-        # Remove all messages from state
-        removals = [RemoveMessage(id=m.id) for m in messages if hasattr(m, "id")]
+        # Remove all messages from state。
+        # ``RemoveMessage(id=None)`` 会直接抛错，而清不掉的消息会**残留**给下一个
+        # 分析师节点 —— 那个节点的 system prompt 只在 messages 为空时才注入，
+        # 于是它会顶着上一个分析师的提示词与上下文干活，产出「标签是 A、内容是 B」
+        # 的报告。所以这里不只判断有没有 id 属性，还要求 id 非空，并数一下漏网的。
+        removals = [RemoveMessage(id=m.id) for m in messages if getattr(m, "id", None)]
+        if len(removals) != len(messages):
+            logger.warning(
+                "Msg Clear [%s]: %d/%d 条消息没有 id，无法清除；下一个分析师可能继承本节点上下文。",
+                analyst_key,
+                len(messages) - len(removals),
+                len(messages),
+            )
 
         logger.debug(
             "Msg Clear [%s]: extracted %d chars, removing %d messages",
@@ -634,12 +672,13 @@ class GraphSetup:
             content = self._safe_invoke(heavy_llm, response_msgs, "Bull Researcher")
 
             return {
-                "investment_debate_state": {
-                    "bull_history": [content],
-                    "current_response": content,
-                    "history": [f"看多: {content}"],
-                    "count": debate_state.get("count", 0) + 1,
-                },
+                "investment_debate_state": _merge_debate(
+                    debate_state,
+                    bull_history=[content],
+                    current_response=content,
+                    history=[f"看多: {content}"],
+                    count=debate_state.get("count", 0) + 1,
+                ),
             }
 
         # ── Bear Researcher ───────────────────────────────────
@@ -684,12 +723,13 @@ class GraphSetup:
             content = self._safe_invoke(heavy_llm, response_msgs, "Bear Researcher")
 
             return {
-                "investment_debate_state": {
-                    "bear_history": [content],
-                    "current_response": content,
-                    "history": [f"看空: {content}"],
-                    "count": debate_state.get("count", 0) + 1,
-                },
+                "investment_debate_state": _merge_debate(
+                    debate_state,
+                    bear_history=[content],
+                    current_response=content,
+                    history=[f"看空: {content}"],
+                    count=debate_state.get("count", 0) + 1,
+                ),
             }
 
         # ── Research Manager (judge) ──────────────────────────
@@ -739,9 +779,7 @@ class GraphSetup:
 
             return {
                 "investment_plan": plan,
-                "investment_debate_state": {
-                    "judge_decision": plan,
-                },
+                "investment_debate_state": _merge_debate(debate_state, judge_decision=plan),
             }
 
         return {
@@ -857,13 +895,14 @@ class GraphSetup:
             )
 
             return {
-                "risk_debate_state": {
-                    "aggressive_history": [content],
-                    "current_aggressive_response": content,
-                    "latest_speaker": "激进派",
-                    "history": [f"激进派: {content}"],
-                    "count": risk_state.get("count", 0) + 1,
-                },
+                "risk_debate_state": _merge_debate(
+                    risk_state,
+                    aggressive_history=[content],
+                    current_aggressive_response=content,
+                    latest_speaker="激进派",
+                    history=[f"激进派: {content}"],
+                    count=risk_state.get("count", 0) + 1,
+                ),
             }
 
         # ── Conservative Analyst ──────────────────────────────
@@ -912,13 +951,14 @@ class GraphSetup:
             )
 
             return {
-                "risk_debate_state": {
-                    "conservative_history": [content],
-                    "current_conservative_response": content,
-                    "latest_speaker": "保守派",
-                    "history": [f"保守派: {content}"],
-                    "count": risk_state.get("count", 0) + 1,
-                },
+                "risk_debate_state": _merge_debate(
+                    risk_state,
+                    conservative_history=[content],
+                    current_conservative_response=content,
+                    latest_speaker="保守派",
+                    history=[f"保守派: {content}"],
+                    count=risk_state.get("count", 0) + 1,
+                ),
             }
 
         # ── Neutral Analyst ───────────────────────────────────
@@ -967,13 +1007,14 @@ class GraphSetup:
             )
 
             return {
-                "risk_debate_state": {
-                    "neutral_history": [content],
-                    "current_neutral_response": content,
-                    "latest_speaker": "中性派",
-                    "history": [f"中性派: {content}"],
-                    "count": risk_state.get("count", 0) + 1,
-                },
+                "risk_debate_state": _merge_debate(
+                    risk_state,
+                    neutral_history=[content],
+                    current_neutral_response=content,
+                    latest_speaker="中性派",
+                    history=[f"中性派: {content}"],
+                    count=risk_state.get("count", 0) + 1,
+                ),
             }
 
         # ── Portfolio Manager (final judge) ───────────────────
@@ -1034,9 +1075,7 @@ class GraphSetup:
 
             return {
                 "final_trade_decision": decision,
-                "risk_debate_state": {
-                    "judge_decision": decision,
-                },
+                "risk_debate_state": _merge_debate(risk_state, judge_decision=decision),
             }
 
         return {

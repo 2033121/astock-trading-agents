@@ -1,16 +1,21 @@
 # AStock Trading Agents
 
-A-share multi-agent quantitative trading decision framework. LangGraph-based pipeline with 15 AI analyst roles producing structured investment ratings through debate.
+A-share multi-agent quantitative trading decision framework. LangGraph-based pipeline with 15 AI agent roles producing structured investment ratings through debate.
+
+Usage from agent hosts (Claude Code / Codex / Trae / Qoder / any MCP host): see `docs/Agent接入指南.md`.
 
 ## Commands
 
 ```bash
 pip install -e .
-astock-trader analyze 600519 --provider deepseek
+astock-trader analyze 600519 --provider deepseek            # 2-8 min, real tokens
+astock-trader analyze 000155 --quiet --output -             # JSON on stdout
+astock-trader watch 600519 --once                           # one monitor tick
 astock-trader config --show
 astock-trader history 600519 --limit 5
 astock-trader memory show
-pytest tests/
+pytest tests/                                               # 799 tests
+python -m ruff check src/ tests/ mcp_server.py
 ```
 
 ## Structure
@@ -23,18 +28,24 @@ src/astock_trader/
 │   ├── managers/    # research manager + portfolio manager
 │   ├── trader/      # trading plan generator
 │   ├── risk_mgmt/   # 3-way risk debate (aggressive/conservative/neutral)
-│   └── utils/       # states, memory, rating, data tools
-├── dataflows/       # Multi-source data (akshare + tushare + eastmoney mx)
+│   └── utils/       # states, memory, rating, data tool wrappers
+├── dataflows/       # Multi-source data (akshare + tushare + eastmoney mx + gdelt + realtime)
 ├── graph/           # LangGraph orchestration (setup, routing, report gen)
+├── monitor/         # Watch layer: rules DSL, polling engine, event store, notifier (no LLM)
+├── external_calibration/  # Third-party scoreboard ledger (isolated from internal memory)
 ├── llm_clients/     # OpenAI-compatible LLM clients (9 providers)
-├── cli/             # Typer CLI
+├── cli/             # Typer CLI (analyze/watch/history/memory/config)
+├── paths.py         # Single source of truth for the project root
 └── default_config.py
+
+mcp_server.py        # Zero-dependency MCP stdio server (5 tools)
+skills/              # 7 agent-invocable workflows
 ```
 
 ## Stack
 
 - **Runtime**: Python 3.10+, LangGraph, LangChain
-- **Data**: akshare, Tushare Pro REST, EastMoney MX
+- **Data**: akshare, Tushare Pro REST, EastMoney MX, GDELT
 - **LLM**: OpenAI-compatible (DeepSeek, Qwen, GLM, Ollama, OpenRouter, SiliconFlow, Together, Groq, MiMo)
 - **CLI**: Typer + Rich
 - **Models**: Pydantic v2
@@ -53,13 +64,14 @@ START → 4 Analysts [Light] (parallel, ReAct tool loops)
 → END
 ```
 
-## Model Allocation (3-tier)
+## Model Allocation
 
 | Tier | Config Key | Agents | Rationale |
 |------|-----------|--------|-----------|
-| **Deep** | `deep_think_llm` | Bull/Bear Researchers, Portfolio Manager | Complex reasoning, argumentation, final decision |
-| **Standard** | `standard_think_llm` | Research Manager, Trader, 3 Risk Analysts | Balanced processing, risk debate, execution |
-| **Light** | `quick_think_llm` | 4 Analysts, SignalProcessor, Report Generator | Fast data collection, formatting |
+| **Deep** | `deep_think_llm` | Portfolio Manager | Final decision |
+| **Heavy** | `heavy_think_llm` | Bull/Bear Researchers | Argumentation |
+| **Standard** | `standard_think_llm` | Research Manager, Trader, 3 Risk Analysts | Balanced |
+| **Light** | `quick_think_llm` | 4 Analysts, SignalProcessor, Report Generator | Fast collection |
 
 ## Style
 
@@ -68,7 +80,8 @@ START → 4 Analysts [Light] (parallel, ReAct tool loops)
 - Docstrings in English (Google style); analysis output in Chinese
 - Log messages in English
 - CLI output rendered by Rich library
-- NEVER hardcode API tokens — use environment variables only
+- NEVER hardcode or commit API tokens — environment variables or `user_config.json` only
+- Comments explain **why**, not what
 
 ## Tests
 
@@ -80,26 +93,50 @@ pytest tests/test_signal_processing.py
 pytest tests/test_memory.py
 pytest tests/test_dataflows.py
 pytest tests/test_agents.py
+
+# Regression guards for silent-failure bug classes — run these when touching
+# the data layer, tool wrappers, or graph state:
+pytest tests/test_tool_signatures.py          # wrapper vs vendor parameter names
+pytest tests/test_debate_state_merge.py       # debate history not overwritten
+pytest tests/test_dataflows_config_wiring.py  # config reaches the data layer
+pytest tests/test_ohlcv_fallback.py           # three-source fallback + units
+pytest tests/test_rating_action.py            # negation-aware rating parsing
+pytest tests/test_cli_stdout_json.py          # --output - stdout contract
 ```
 
 ## Boundaries
 
 - Read-only analysis tool — does NOT execute trades
-- API keys must come from environment variables, never hardcoded
-- Data vendor fallback: 3-level chain per category (e.g., tushare → akshare → mx)
-- Report Generator is deterministic (no LLM); elapsed time patched post-graph
-- Agent state mutations only through reducer functions
-- ReAct agents need explicit empty-message injection (see setup.py)
+- API keys/tokens come from env vars or `user_config.json` (repo-external), never hardcoded or committed
+- **Nested state reducers do not work in this LangGraph version.** `investment_debate_state` /
+  `risk_debate_state` are replaced wholesale on every write, so debate nodes MUST go through
+  `setup._merge_debate()`. Symptom of getting this wrong is silent: the report still renders, one
+  side's arguments just vanish.
+- Data vendor fallback is **per method** (`interface.VENDOR_METHODS`), not per category. Fallback
+  triggers on an exception *or* an `"[ERROR] ..."` soft-failure string.
+- `TradingAgentsGraph.__init__` pushes config into the `dataflows` singleton; without it
+  `get_config()` is `{}` and credentials silently never reach the vendors.
+- Credential precedence is **config-first, then env var** (a stale env token otherwise shadows a
+  freshly configured one).
+- Report Generator is deterministic (no LLM); elapsed time is patched post-graph into both the
+  JSON field and the summary prose.
+- ReAct agents need explicit empty-message injection (see `setup.py`); msg-clear warns when a
+  message lacks an `id`, because an uncleared message leaks the previous analyst's system prompt.
+- Never hardcode `~/.astock_trader` — use `astock_trader.paths.project_dir()`.
+- Tool wrappers must mirror their vendor's parameter names exactly (`trade_date` may be injected
+  via `InjectedState` and converted to `curr_date`, but everything else must match).
 
 ## Environment
 
 | Variable | Purpose |
 |----------|---------|
-| `OPENAI_API_KEY` | LLM API key (most providers) |
+| `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `MIMO_API_KEY` / `LLM_API_KEY` | LLM API key (one of) |
 | `TUSHARE_TOKEN` | Tushare Pro financial data |
 | `MX_APIKEY` | EastMoney MX news data |
-| `MIMO_API_KEY` | Xiaomi MiMo LLM API key |
-| `ASTOCK_REPORT_DIR` | HTML report output directory |
+| `ASTOCK_HOME` | Project root (all output dirs derive from it) |
+| `ASTOCK_REPORT_DIR` | HTML report dir |
+| `ASTOCK_SNAPSHOT_LOG_PATH` | Snapshot ledger path (MCP) |
+| `ASTOCK_MCP_CLI_TIMEOUT` | MCP subprocess timeout, default 1200s |
 
 ## Skills (agent-invocable workflows)
 
@@ -110,14 +147,13 @@ Directory `skills/` — each subfolder has a SKILL.md with frontmatter
 ./integrations/install.sh [dsh|claude|codex|zcode ...] [--dry-run] [--force]
 ```
 
-| Skill | Slug (codex prompt) | Trigger words |
-|-------|---------------------|---------------|
+| Skill | Codex prompt slug | Trigger words |
+|-------|-------------------|---------------|
 | 智能分析 | astock-analysis | 分析、股票分析、analyze |
 | 分析历史 | astock-history | 历史、分析历史 |
 | 决策记忆 | astock-memory | 记忆、决策记忆 |
 | 交易配置 | astock-config | 配置、交易配置 |
 | 快照跟踪对比 | astock-snapshot-tracking | 快照对比、评级变化 |
-| 复盘深度分析 | astock-postmortem | 复盘、回测分析 |
 | 龙虎榜解读 | astock-lhb-interpretation | 龙虎榜、席位 |
 | 行业对比解读 | astock-industry-comparison | 行业对比、估值分位 |
 

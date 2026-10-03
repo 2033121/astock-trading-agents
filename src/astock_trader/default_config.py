@@ -2,12 +2,65 @@
 
 import os
 
+from astock_trader.paths import resolve_project_dir
+
+# 项目根：由 paths.resolve_project_dir() 决定（ASTOCK_HOME → D:\astock_trader
+# → ~/.astock_trader）。所有输出目录都从这里派生，改根只需改一处。
+_PROJECT_DIR = resolve_project_dir()
+
+# HTML 报告的显式覆盖变量。留着它是因为文档里已承诺该用法
+# （README「未设置时报告功能自动禁用」的语义已改为「默认写到 <项目根>/reports」）。
+ENV_REPORT_DIR = "ASTOCK_REPORT_DIR"
+
+# key -> 相对项目根的子路径。用于让 user_config.json 里只写 project_dir 时，
+# 其余目录自动跟随。
+_DERIVED_FROM_PROJECT: dict[str, tuple[str, ...]] = {
+    "results_dir": ("logs",),
+    "data_cache_dir": ("cache",),
+    "memory_log_path": ("memory", "trading_memory.md"),
+    "report_output_dir": ("reports",),
+}
+
+
+def _derive(root: str, key: str) -> str:
+    return os.path.join(root, *_DERIVED_FROM_PROJECT[key])
+
+
+def _default_report_dir() -> str:
+    """报告目录：``ASTOCK_REPORT_DIR`` 优先，否则 ``<项目根>/reports``。
+
+    与旧行为的区别：旧默认是空串，于是**默认根本不生成报告**，只有显式设了
+    环境变量才会有 HTML。这是一个静默失效的默认值，改成「默认就写，位置可覆盖」。
+    """
+    override = os.environ.get(ENV_REPORT_DIR, "").strip()
+    return os.path.abspath(os.path.expanduser(override)) if override else _derive(_PROJECT_DIR, "report_output_dir")
+
+
+def derive_paths(cfg: dict) -> dict:
+    """补全派生路径；**只补没写的键**，显式配置过的原样尊重。
+
+    让 user_config.json 可以只声明 ``project_dir`` 一处，``results_dir`` /
+    ``report_output_dir`` 等自动跟随；若显式写了某个派生键（例如把报告单独
+    放到另一个盘），则以显式值为准。
+    """
+    out = dict(cfg)
+    root = out.get("project_dir") or _PROJECT_DIR
+    report_override = os.environ.get(ENV_REPORT_DIR, "").strip()
+    for key, _parts in _DERIVED_FROM_PROJECT.items():
+        if out.get(key):
+            continue
+        if key == "report_output_dir" and report_override:
+            continue
+        out[key] = _derive(root, key)
+    return out
+
+
 DEFAULT_CONFIG = {
-    # ── 项目目录 ──────────────────────────────────────────────
-    "project_dir": os.path.expanduser("~/.astock_trader"),
-    "results_dir": os.path.expanduser("~/.astock_trader/logs"),
-    "data_cache_dir": os.path.expanduser("~/.astock_trader/cache"),
-    "memory_log_path": os.path.expanduser("~/.astock_trader/memory/trading_memory.md"),
+    # ── 项目目录（均由 _PROJECT_DIR 派生）──────────────────────
+    "project_dir": _PROJECT_DIR,
+    "results_dir": _derive(_PROJECT_DIR, "results_dir"),
+    "data_cache_dir": _derive(_PROJECT_DIR, "data_cache_dir"),
+    "memory_log_path": _derive(_PROJECT_DIR, "memory_log_path"),
     "memory_log_max_entries": None,
     # ── LLM 配置 ─────────────────────────────────────────────
     "llm_provider": "deepseek",
@@ -16,6 +69,9 @@ DEFAULT_CONFIG = {
     "standard_think_llm": "mimo-v2.5",  # 标准处理层：研究经理+交易员+3风控
     "quick_think_llm": "deepseek-v4-flash",  # 轻量采集层：4分析师+信号处理+报告
     "backend_url": None,  # 自定义 API 端点，默认 None 使用官方地址
+    # LLM 凭证：默认空，回落到各 provider 的环境变量（OPENAI_API_KEY 等）。
+    # 只在 user_config.json 里写（仓库之外），绝不要提交到版本库。
+    "api_key": "",
     # ── LLM 容错配置 ─────────────────────────────────────────
     "llm_max_retries": 3,  # 最大重试次数
     "llm_retry_base_delay": 4,  # 指数退避基础延迟（秒）
@@ -68,6 +124,11 @@ DEFAULT_CONFIG = {
     },
     "data_vendor": None,  # 全局首选供应商（优先级最高），None 则按各分类配置
     "tool_vendors": {},
+    # ── 数据源凭证（只从用户级配置／环境变量读，绝不写进仓库）──────
+    # 默认留空，**不要在这里快照环境变量**：那会让「用户显式配置」与「进程启动
+    # 时的环境」混为一谈，旧 token 会被当成用户配置一路带下去。
+    # 实际取值见 tushare_data._get_token()：配置 → 环境变量。
+    "tushare_token": "",
     # ── 外部校准接入（issue #1 试点，默认关闭）─────────────────
     # 第三方公开记分板（Headline Arena）的只读接入：同步机械结算记录，并与
     # 提交前冻结的本地宏观判断比对，给反思闭环一份外部参照。
@@ -82,5 +143,6 @@ DEFAULT_CONFIG = {
     "headline_arena_base_url": "https://headlinearena.com/api/v1",  # API 根地址
     "headline_arena_timeout": 15,  # 单次请求超时（秒）
     # ── 报告产出 ────────────────────────────────────────────
-    "report_output_dir": os.environ.get("ASTOCK_REPORT_DIR", ""),  # HTML 报告保存目录（空则不生成）
+    # 默认写到 <项目根>/reports；ASTOCK_REPORT_DIR 可覆盖到任意位置。
+    "report_output_dir": _default_report_dir(),
 }

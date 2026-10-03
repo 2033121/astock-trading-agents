@@ -21,6 +21,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -32,13 +33,30 @@ from typing import Any
 # Config
 # --------------------------------------------------------------------------
 
+
+def _project_dir() -> str:
+    """解析项目根目录。
+
+    这里是**内联**实现而不是 import ``astock_trader.paths``：本模块刻意保持
+    「零依赖、可 `python mcp_server.py` 直接跑」，不依赖包被安装。规则与
+    ``src/astock_trader/paths.py`` 保持一致，改动时请同步两处。
+    """
+    override = os.environ.get("ASTOCK_HOME", "").strip()
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    preferred = os.path.abspath(os.path.join("D:\\", "astock_trader"))
+    if os.path.isdir(os.path.dirname(preferred)):
+        return preferred
+    return os.path.join(os.path.expanduser("~"), ".astock_trader")
+
+
 SNAPSHOT_LOG_PATH = os.environ.get(
     "ASTOCK_SNAPSHOT_LOG_PATH",
     r"D:\stock\trading-agents\analysis_log.json",
 )
 MEMORY_LOG_PATH = os.environ.get(
     "ASTOCK_MEMORY_LOG_PATH",
-    os.path.expanduser("~/.astock_trader/memory/trading_memory.md"),
+    os.path.join(_project_dir(), "memory", "trading_memory.md"),
 )
 CLI_TIMEOUT_SECONDS = int(os.environ.get("ASTOCK_MCP_CLI_TIMEOUT", "1200"))  # 20min
 
@@ -62,12 +80,14 @@ def review_backtest(days: int = 0, report: bool = False) -> dict[str, Any]:
         return {"error": f"Script not found: {script}"}
     cmd = [sys.executable, str(script), "--days", str(max(int(days), 0))]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS, check=False)
+        # 同上：固定 UTF-8 解码，不跟随本机区域设置
+        proc = subprocess.run(cmd, capture_output=True, timeout=CLI_TIMEOUT_SECONDS, check=False)
     except subprocess.TimeoutExpired:
         return {"error": f"review_backtest timed out after {CLI_TIMEOUT_SECONDS}s"}
+    stdout = proc.stdout.decode("utf-8", errors="replace").strip()
+    stderr = proc.stderr.decode("utf-8", errors="replace").strip()
     if proc.returncode != 0:
-        return {"error": proc.stderr.strip()[-2000:] or f"exit {proc.returncode}"}
-    stdout = proc.stdout.strip()
+        return {"error": stderr[-2000:] or f"exit {proc.returncode}"}
     if report:
         return {"summary": None, "report_markdown": stdout}
     try:
@@ -160,16 +180,19 @@ def analyze_stock(symbol: str, date: str | None = None, analysts: str | None = N
         cmd += ["--analysts", analysts]
     cmd += ["--quiet", "--output", "-"]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS, check=False)
+        # 不用 text=True：把「子进程输出」和「本机区域设置」解耦，固定按 UTF-8 解码。
+        # Windows 上父进程默认按 GBK 解，中文（评级、决策正文）会整段乱码。
+        proc = subprocess.run(cmd, capture_output=True, timeout=CLI_TIMEOUT_SECONDS, check=False)
     except subprocess.TimeoutExpired:
         return {"error": f"Pipeline timed out after {CLI_TIMEOUT_SECONDS}s", "symbol": symbol}
+    stdout = proc.stdout.decode("utf-8", errors="replace").strip()
+    stderr = proc.stderr.decode("utf-8", errors="replace").strip()
     if proc.returncode != 0:
-        return {"error": proc.stderr.strip()[-2000:] or f"exit {proc.returncode}", "symbol": symbol}
-    stdout = proc.stdout.strip()
+        return {"error": stderr[-2000:] or f"exit {proc.returncode}", "symbol": symbol}
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        # CLI with --output - prints JSON; be tolerant of progress noise
+        # 容忍日志噪声：截取第一个 { 到最后一个 } 之间的部分再试一次
         start = stdout.find("{")
         end = stdout.rfind("}")
         if start >= 0 and end > start:
@@ -182,7 +205,8 @@ def analyze_stock(symbol: str, date: str | None = None, analysts: str | None = N
     return {
         "symbol": symbol,
         "date": date,
-        "rating": data.get("rating") or data.get("signal"),
+        # CLI 的结果 JSON 用下划线前缀存运行元数据：_rating / _elapsed_seconds
+        "rating": data.get("_rating") or data.get("rating") or data.get("signal"),
         "decision_text": (data.get("final_trade_decision") or "")[:2000],
         "report_path": data.get("report_path"),
         "elapsed_seconds": data.get("_elapsed_seconds"),
@@ -312,10 +336,23 @@ class MCPServer:
         return {"jsonrpc": "2.0", "id": msg_id, "result": payload}
 
 
+def _force_utf8_stdio() -> None:
+    """把 stdio 钉成 UTF-8 —— MCP 协议就是 UTF-8，不能跟着系统区域设置走。
+
+    Windows 上 ``sys.stdout.encoding`` 默认是 GBK，而这里 ``json.dumps`` 用了
+    ``ensure_ascii=False``：中文（股票名、评级、记忆正文）会被编成 GBK 字节，
+    客户端按 UTF-8 解就是乱码。输入侧同理 —— 请求体里的中文标的描述会被解错。
+    """
+    for stream in (sys.stdin, sys.stdout):
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args(argv)
 
+    _force_utf8_stdio()
     server = MCPServer()
     for line in sys.stdin:
         line = line.strip()

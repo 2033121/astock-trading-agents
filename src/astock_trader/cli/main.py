@@ -20,8 +20,10 @@ Invocation::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +35,28 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+from astock_trader.paths import project_dir, project_path
+
+
+def _make_console_unicode_safe() -> None:
+    """让 stdout / stderr 遇到无法编码的字符时**替换**，而不是抛异常。
+
+    Windows 控制台默认 GBK，``sys.stdout.errors`` 是 ``surrogateescape``；Rich 渲染
+    ``⚠`` / emoji 这类字符时会抛 ``UnicodeEncodeError``。实测那次 600519 分析其实
+    已经跑完、HTML 报告也写好了，却在**收尾打印**时崩掉，紧跟着的结果 JSON 整个丢失
+    —— 一份跑了几分钟的分析白做。
+
+    只放宽错误处理策略、**不改编码**：把本 CLI 当子进程读输出的调用方拿到的字节流
+    格式不变，只是原本会崩的字符变成 ``?``。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        # 测试捕获器 / pythonw（stdout 为 None）/ 已包装的流不支持 reconfigure
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            stream.reconfigure(errors="replace")  # type: ignore[union-attr]
+
+
+_make_console_unicode_safe()
 
 # ────────────────────────────────────────────────────────────────
 #  App setup
@@ -50,7 +74,7 @@ console = Console()
 #  Helpers
 # ────────────────────────────────────────────────────────────────
 
-_DEFAULT_CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".astock_trader")
+_DEFAULT_CONFIG_DIR = project_dir()
 _USER_CONFIG_PATH = os.path.join(_DEFAULT_CONFIG_DIR, "user_config.json")
 
 
@@ -83,11 +107,12 @@ def _build_config(
     max_risk_discuss_rounds: int = 1,
 ) -> dict[str, Any]:
     """Merge DEFAULT_CONFIG + user config + CLI overrides."""
-    from astock_trader.default_config import DEFAULT_CONFIG
+    from astock_trader.default_config import DEFAULT_CONFIG, derive_paths
 
+    # user_config.json 里只写 project_dir 一处时，logs/reports/monitor 等派生目录
+    # 自动跟随它；显式写过某个派生键的则以显式值为准。
     cfg = {**DEFAULT_CONFIG}
-    user_cfg = _load_user_config()
-    cfg.update(user_cfg)
+    cfg.update(derive_paths(_load_user_config()))
 
     if provider is not None:
         cfg["llm_provider"] = provider
@@ -201,7 +226,7 @@ def analyze(
     debate_rounds: int = typer.Option(1, "--debate-rounds", help="多空辩论轮数"),
     risk_rounds: int = typer.Option(1, "--risk-rounds", help="风控讨论轮数"),
     checkpoint: bool = typer.Option(False, "--checkpoint", help="启用 SQLite 检查点（崩溃恢复）"),
-    output: str | None = typer.Option(None, "--output", "-o", help="输出文件路径 (JSON)"),
+    output: str | None = typer.Option(None, "--output", "-o", help="输出文件路径（JSON）；传 - 表示写到 stdout"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="安静模式，仅输出结果"),
 ) -> None:
     """运行多 Agent 分析流水线。
@@ -326,12 +351,13 @@ def analyze(
             console.print("[dim]（终端编码不支持完整报告，请查看保存的结果文件）[/dim]")
 
     # ── Save output ───────────────────────────────────────────
+    # ``--output -`` 是「把 JSON 打到 stdout」的约定写法，MCP server 等调用方靠它
+    # 取结构化结果。此前 ``-`` 被当成普通文件名，于是既在**工作目录里留下一个名叫
+    # ``-`` 的垃圾文件**，又让调用方永远解析不到 JSON（它拿到的是 quiet 模式的 TSV）。
+    to_stdout = output == "-"
     output_path = output
     if output_path is None:
-        results_dir = config.get(
-            "results_dir",
-            os.path.expanduser("~/.astock_trader/logs"),
-        )
+        results_dir = config.get("results_dir") or project_path("logs")
         Path(results_dir).mkdir(parents=True, exist_ok=True)
         output_path = os.path.join(
             results_dir,
@@ -342,18 +368,33 @@ def analyze(
         serialisable = _serialise_state(final_state)
         serialisable["_rating"] = rating
         serialisable["_elapsed_seconds"] = round(elapsed, 1)
+        payload = json.dumps(serialisable, ensure_ascii=False, indent=2)
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(serialisable, f, ensure_ascii=False, indent=2)
-
-        if not quiet:
-            console.print(f"\n[dim]结果已保存到: {output_path}[/dim]")
+        if to_stdout:
+            # 直接写 UTF-8 字节，绕开控制台编码（Windows 是 GBK）—— 调用方固定按
+            # UTF-8 解码即可，结果不随本机区域设置变化。
+            sys.stdout.flush()
+            buffer = getattr(sys.stdout, "buffer", None)
+            if buffer is not None:
+                buffer.write(payload.encode("utf-8"))
+                buffer.write(b"\n")
+                buffer.flush()
+            else:  # pragma: no cover - 测试捕获器等没有 buffer 的流
+                sys.stdout.write(payload + "\n")
+        else:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(payload)
+            if not quiet:
+                console.print(f"\n[dim]结果已保存到: {output_path}[/dim]")
     except Exception as exc:
         console.print(f"[yellow]保存结果失败: {exc}[/yellow]")
 
-    # Also print rating to stdout in quiet mode
-    if quiet:
-        console.print(f"{symbol}\t{trade_date}\t{rating}")
+    # Also print rating to stdout in quiet mode（stdout 已是 JSON 时不掺 TSV）。
+    # 用 sys.stdout 直写而不是 console.print：Rich 会把制表符重排成空格填充，
+    # 那样按 \t 切分的调用方会解析出错 —— 说好是 TSV 就得真的是 TSV。
+    if quiet and not to_stdout:
+        sys.stdout.write(f"{symbol}\t{trade_date}\t{rating}\n")
+        sys.stdout.flush()
 
 
 @app.command()
@@ -627,9 +668,7 @@ def watch(
         None, help="监控标的代码，如 600519 000001；也可写在 monitor.json 的 symbols 里"
     ),
     interval: int = typer.Option(30, "--interval", "-i", help="轮询间隔（秒）"),
-    config_path: str | None = typer.Option(
-        None, "--config", help="监控配置文件路径（默认 ~/.astock_trader/monitor.json）"
-    ),
+    config_path: str | None = typer.Option(None, "--config", help="监控配置文件路径（默认 <项目根>/monitor.json）"),
     cooldown: float | None = typer.Option(None, "--cooldown", help="同一标的同一规则的静默窗口（秒），默认 1800"),
     once: bool = typer.Option(False, "--once", help="只跑一轮，用于核对规则是否写对"),
     max_ticks: int | None = typer.Option(None, "--max-ticks", help="最多跑多少轮后退出"),
@@ -644,7 +683,7 @@ def watch(
         astock-trader watch 600519 --interval 15 --config ~/my_monitor.json
         astock-trader watch --test-notify
 
-    监控配置（~/.astock_trader/monitor.json）同时放规则与通知通道：
+    监控配置（<项目根>/monitor.json）同时放规则与通知通道：
 
     \b
         {

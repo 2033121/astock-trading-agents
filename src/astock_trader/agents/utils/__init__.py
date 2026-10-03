@@ -23,7 +23,13 @@ from astock_trader.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_news,
 )
-from astock_trader.agents.utils.rating import RATING_REVIEW, RATINGS, extract_rating, parse_rating
+from astock_trader.agents.utils.rating import (
+    RATING_REVIEW,
+    RATINGS,
+    extract_action,
+    extract_rating,
+    parse_rating,
+)
 from astock_trader.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
@@ -42,6 +48,7 @@ __all__ = [
     "invoke_structured_or_freetext",
     "parse_rating",
     "extract_rating",
+    "extract_action",
     "RATINGS",
     "RATING_REVIEW",
     # 数据工具

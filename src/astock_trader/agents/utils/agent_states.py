@@ -23,6 +23,13 @@ def _append_str_list(left: list[str] | None, right: list[str] | None) -> list[st
     return left + right
 
 
+# ⚠️ 下面两个子状态上标注的 ``_append_str_list`` **不生效**：LangGraph 只对
+# ``StateGraph`` 顶层 schema 的字段应用 reducer，嵌套 TypedDict 会被当成
+# LastValue 通道 —— 写入即整体替换（已用最小 StateGraph 实测确认）。
+# 保留标注只是说明字段语义；真正保证辩论历史不被覆盖的是 ``setup._merge_debate``，
+# 它让每个辩论节点写出「合并后的完整字典」。改动辩论节点时不要绕开它。
+
+
 # ────────────────────────────────────────────────────────────
 #  Invest Debate State — 多空辩论子状态
 # ────────────────────────────────────────────────────────────

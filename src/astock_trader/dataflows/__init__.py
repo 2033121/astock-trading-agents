@@ -30,6 +30,7 @@ from .akshare_data import (
     get_income_statement,
     get_indicators,
     get_stock_data,
+    get_technical_indicators,
 )
 from .config import get_config, set_config
 
@@ -50,6 +51,7 @@ __all__ = [
     # stock data
     "get_stock_data",
     "get_indicators",
+    "get_technical_indicators",
     "get_fundamentals",
     "get_balance_sheet",
     "get_cashflow",

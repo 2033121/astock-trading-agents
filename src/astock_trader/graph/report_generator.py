@@ -16,6 +16,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# 耗时占位符。报告在流水线**末尾**生成，而总耗时只有调用方事后才知道
+# （``TradingAgentsGraph._patch_report_elapsed`` 会原地回填）。不占位的话，
+# 摘要正文里会永远印着「分析耗时：0.0秒」—— 因为只有 JSON 里的 ``elapsed``
+# 字段被回填了，写死在 Markdown 正文里的那个数字没人管。
+ELAPSED_PLACEHOLDER = "__ASTOCK_ELAPSED__"
+
 # ────────────────────────────────────────────────────────────────
 #  Stage definitions (order matches the pipeline topology)
 # ────────────────────────────────────────────────────────────────
@@ -163,6 +169,40 @@ def generate_report(
 # ────────────────────────────────────────────────────────────────
 
 
+def _join_history(value: Any) -> str:
+    """把辩论历史字段拼成文本。它可能是 ``list[str]``，也可能是拼好的 ``str``。"""
+    if isinstance(value, (list, tuple)):
+        return "\n\n".join(str(v).strip() for v in value if str(v).strip())
+    return str(value or "").strip()
+
+
+def _render_debate(debate: dict[str, Any], sides: list[tuple[str, str]], judge_title: str) -> str:
+    """把辩论双方发言与裁判裁决拼成一段。
+
+    旧实现只取 ``judge_decision``，而裁判节点把**同一段文本**同时写进了
+    ``judge_decision`` 和下一阶段的字段，于是报告里「多空辩论」与「研究主管」
+    两个面板逐字相同，「风控辩论」与「组合经理」同理 —— 辩论过程一个字都看不到，
+    而辩论恰恰是这套框架的核心卖点。这里改成先列双方发言，再附裁决。
+    """
+    parts: list[str] = []
+    for title, key in sides:
+        body = _join_history(debate.get(key))
+        if body:
+            parts.append(f"### {title}\n\n{body}")
+
+    judge = _join_history(debate.get("judge_decision"))
+    if judge:
+        parts.append(f"### {judge_title}\n\n{judge}")
+
+    if not parts:
+        # 双方历史都空时退到流水账，至少不要显示成空白面板
+        history = _join_history(debate.get("history"))
+        if history:
+            parts.append(f"### 辩论记录\n\n{history}")
+
+    return "\n\n---\n\n".join(parts)
+
+
 def _extract_content(state: dict[str, Any], defn: dict) -> str:
     """Extract the text content for a stage from the state."""
     sid = defn["id"]
@@ -171,14 +211,24 @@ def _extract_content(state: dict[str, Any], defn: dict) -> str:
     if field:
         return state.get(field, "")
 
-    # Special cases: debate states
+    # Special cases: debate states —— 取「双方发言 + 裁决」，而不是只有裁决
     if sid == "debate":
-        debate = state.get("investment_debate_state") or {}
-        return debate.get("judge_decision", "")
+        return _render_debate(
+            state.get("investment_debate_state") or {},
+            [("多头研究员", "bull_history"), ("空头研究员", "bear_history")],
+            "辩论裁判（研究主管）",
+        )
 
     if sid == "risk":
-        risk = state.get("risk_debate_state") or {}
-        return risk.get("judge_decision", "")
+        return _render_debate(
+            state.get("risk_debate_state") or {},
+            [
+                ("激进派", "aggressive_history"),
+                ("保守派", "conservative_history"),
+                ("中性派", "neutral_history"),
+            ],
+            "风控裁判（组合经理）",
+        )
 
     if sid == "summary":
         return ""  # Built separately
@@ -226,9 +276,15 @@ def _build_summary(
         excerpt = _excerpt(field, 100)
         rows.append(f"| **{name}** | {excerpt} | — |")
 
-    # Debate rows
+    # Debate rows —— 摘要里给「多/空两方各一句」，而不是再抄一遍裁判结论：
+    # 裁决原文已经完整出现在上面的「研究主管」行里，重复显示只会让人以为
+    # 两个环节产出相同。
     debate_judge = debate.get("judge_decision", "")
-    if debate_judge:
+    bull_line = _excerpt_from_text(_join_history(debate.get("bull_history")), 60)
+    bear_line = _excerpt_from_text(_join_history(debate.get("bear_history")), 60)
+    if bull_line or bear_line:
+        rows.append(f"| **多空辩论** | 多：{bull_line or '—'} / 空：{bear_line or '—'} | — |")
+    elif debate_judge:
         rows.append(f"| **多空辩论** | {_excerpt_from_text(debate_judge, 100)} | — |")
 
     plan = state.get("investment_plan", "")
@@ -240,7 +296,11 @@ def _build_summary(
         rows.append(f"| **交易员** | {_excerpt_from_text(trader, 100)} | — |")
 
     risk_judge = risk.get("judge_decision", "")
-    if risk_judge:
+    agg_line = _excerpt_from_text(_join_history(risk.get("aggressive_history")), 60)
+    cons_line = _excerpt_from_text(_join_history(risk.get("conservative_history")), 60)
+    if agg_line or cons_line:
+        rows.append(f"| **风控辩论** | 激进：{agg_line or '—'} / 保守：{cons_line or '—'} | — |")
+    elif risk_judge:
         rows.append(f"| **风控辩论** | {_excerpt_from_text(risk_judge, 100)} | — |")
 
     final = state.get("final_trade_decision", "")
@@ -249,9 +309,12 @@ def _build_summary(
 
     table_rows = "\n".join(rows)
 
+    # elapsed 为 0 表示「调用方稍后回填」，此时写占位符而不是写 0.0
+    elapsed_text = f"{elapsed:.1f}" if elapsed else ELAPSED_PLACEHOLDER
+
     summary = f"""## {company} 投资分析执行摘要
 
-**报告日期：{trade_date} | 评级：{rating} | 分析耗时：{elapsed:.1f}秒**
+**报告日期：{trade_date} | 评级：{rating} | 分析耗时：{elapsed_text}秒**
 
 ---
 
@@ -271,7 +334,7 @@ def _build_summary(
 
 ### 分析流程回溯
 
-本报告由 **{n_stages} 个智能体** 协作完成，总耗时 {elapsed:.1f} 秒，产出约 {total_chars:,} 字。
+本报告由 **{n_stages} 个智能体** 协作完成，总耗时 {elapsed_text} 秒，产出约 {total_chars:,} 字。
 多空辩论和风控辩论环节采用对抗式论证，确保投资决策经过充分质疑和检验。
 
 > **一句话总结：{_excerpt("final_trade_decision", 150)}**"""

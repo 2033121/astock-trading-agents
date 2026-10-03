@@ -13,10 +13,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from astock_trader.paths import project_path
+
 logger = logging.getLogger(__name__)
 
 # Default directory for checkpoint databases
-_DEFAULT_CHECKPOINT_DIR = os.path.join(os.path.expanduser("~"), ".astock_trader", "checkpoints")
+_DEFAULT_CHECKPOINT_DIR = project_path("checkpoints")
 
 
 def _ensure_dir(directory: str) -> None:
